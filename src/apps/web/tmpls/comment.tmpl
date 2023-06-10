@@ -1,0 +1,11 @@
+<div class="comment">
+    <pre>
+        $(ctx.comment)
+    </pre>
+
+    <div class="replies">
+        <div>
+            $(r)
+        </div> @(const auto &r : ctx.replies)
+    </div> ?(ctx.replies.size())
+</div>
