@@ -4,6 +4,29 @@
 #include "WebTemplates.h"
 
 
+struct EventThread {
+    struct Elem {
+        tao::json::value ev;
+        flat_hash_set<std::string> children;
+    };
+
+    flat_hash_map<std::string, Elem> idToElem;
+    bool found = false;
+
+
+    EventThread(lmdb::txn &txn, Decompressor &decomp, std::string_view id) {
+        auto existing = lookupEventById(txn, id);
+        if (!existing) return;
+        found = true;
+
+        {
+            tao::json::value json = tao::json::from_string(getEventJson(txn, decomp, existing->primaryKeyId));
+            idToElem.emplace(id, Elem{ std::move(json) });
+        }
+    }
+};
+
+
 void WebServer::runReader(ThreadPool<MsgReader>::Thread &thr) {
     Decompressor decomp;
 
