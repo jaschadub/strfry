@@ -1,5 +1,9 @@
-<div class="comment">
-    <pre>
+<div class="note">
+    <div class="header">
+        $(ctx.user.username) : +$(ctx.ev->upVotes) -$(ctx.ev->downVotes)
+    </div>
+
+    <pre class="content">
         $(ctx.comment)
     </pre>
 

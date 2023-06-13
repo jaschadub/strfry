@@ -1,3 +1,11 @@
+.header {
+    font-weight: bold
+}
+
+.content {
+    white-space: pre-line;
+}
+
 .replies {
     padding-left: 20px;
 }
