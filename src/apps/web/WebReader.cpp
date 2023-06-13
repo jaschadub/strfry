@@ -2,8 +2,81 @@
 
 #include "DBQuery.h"
 #include "WebTemplates.h"
+#include "apps/web/uri.hh"
 
 
+
+std::string getParentEvent(const tao::json::value &json) {
+    std::string parent;
+
+    const auto &tags = json.at("tags").get_array();
+
+    // Try to find an e-tag with a "reply" type
+    for (const auto &t : tags) {
+        const auto &tArr = t.get_array();
+        if (tArr.at(0) == "e" && tArr.size() == 4 && tArr.at(3) == "reply") {
+            parent = from_hex(tArr.at(1).get_string());
+            break;
+        }
+    }
+
+    if (!parent.size()) {
+        // Otherwise, assume last e tag is reply
+
+        for (auto it = tags.rbegin(); it != tags.rend(); ++it) {
+            const auto &tArr = it->get_array();
+            if (tArr.at(0) == "e") {
+                parent = from_hex(tArr.at(1).get_string());
+                break;
+            }
+        }
+    }
+
+    return parent;
+}
+
+struct User {
+    std::string pubkey;
+
+    std::string username;
+    tao::json::value kind0Json;
+
+    User(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) : pubkey(pubkey) {
+        std::string prefix = pubkey;
+        prefix += lmdb::to_sv<uint64_t>(0);
+
+        env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, prefix, "", [&](std::string_view k, std::string_view v){
+            ParsedKey_StringUint64Uint64 parsedKey(k);
+
+            if (parsedKey.s == pubkey && parsedKey.n1 == 0) {
+                auto levId = lmdb::from_sv<uint64_t>(v);
+                tao::json::value json = tao::json::from_string(getEventJson(txn, decomp, levId));
+
+                try {
+                    kind0Json = tao::json::from_string(json.at("content").get_string());
+                    username = kind0Json.at("name").get_string();
+                } catch (std::exception &e) {
+                }
+            }
+
+            return false;
+        });
+
+        if (username.size() == 0) username = to_hex(pubkey.substr(0,4));
+    }
+};
+
+struct UserCache {
+    std::unordered_map<std::string, User> userCache;
+
+    const User *getUser(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) {
+        auto u = userCache.find(pubkey);
+        if (u != userCache.end()) return &u->second;
+
+        userCache.emplace(pubkey, User(txn, decomp, pubkey));
+        return &userCache.at(pubkey);
+    }
+};
 
 struct EventThread {
     struct Event {
@@ -15,15 +88,10 @@ struct EventThread {
         uint64_t downVotes = 0;
     };
 
-    struct User {
-        std::string pubkey;
-        std::string username;
-    };
-
     std::string id;
     bool found = false;
     flat_hash_map<std::string, Event> eventCache;
-    flat_hash_map<std::string, User> userCache;
+    UserCache userCache;
 
 
     EventThread(lmdb::txn &txn, Decompressor &decomp, std::string_view id) : id(std::string(id)) {
@@ -54,30 +122,7 @@ struct EventThread {
         });
 
         for (const auto &[id, e] : eventCache) {
-            std::string parent;
-
-            const auto &tags = e.json.at("tags").get_array();
-
-            // Try to find an e-tag with a "reply" type
-            for (const auto &t : tags) {
-                const auto &tArr = t.get_array();
-                if (tArr.at(0) == "e" && tArr.size() == 4 && tArr.at(3) == "reply") {
-                    parent = from_hex(tArr.at(1).get_string());
-                    break;
-                }
-            }
-
-            if (!parent.size()) {
-                // Otherwise, assume last e tag is reply
-
-                for (auto it = tags.rbegin(); it != tags.rend(); ++it) {
-                    const auto &tArr = it->get_array();
-                    if (tArr.at(0) == "e") {
-                        parent = from_hex(tArr.at(1).get_string());
-                        break;
-                    }
-                }
-            }
+            std::string parent = getParentEvent(e.json);
 
             if (parent.size()) {
                 auto p = eventCache.find(parent);
@@ -111,12 +156,12 @@ struct EventThread {
             struct {
                 std::string comment;
                 const Event *ev;
-                User user;
+                const User *user;
                 std::vector<TemplarResult> replies;
             } ctx;
 
             ctx.comment = elem.json.at("content").get_string();
-            ctx.user = getUser(txn, decomp, sv(elem.ev.flat_nested()->pubkey()));
+            ctx.user = userCache.getUser(txn, decomp, std::string(sv(elem.ev.flat_nested()->pubkey())));
             ctx.ev = &elem;
 
             for (const auto &childId : elem.children) {
@@ -128,42 +173,94 @@ struct EventThread {
 
         return process(id);
     }
+};
 
 
-    // FIXME: a lot of copying with return by value. maybe use std::unordered_map and return pointer?
-    User getUser(lmdb::txn &txn, Decompressor &decomp, std::string_view pubkey) {
-        auto u = userCache.find(pubkey);
-        if (u != userCache.end()) return u->second;
+struct UserComments {
+    User u;
 
-        std::string username;
+    struct Comment {
+        tao::json::value json;
+        std::string parent;
+    };
 
-        std::string prefix;
-        prefix += pubkey;
-        prefix += lmdb::to_sv<uint64_t>(0);
+    std::vector<Comment> comments;
 
-        env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, prefix, "", [&](std::string_view k, std::string_view v){
+
+    UserComments(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) : u(txn, decomp, pubkey) {
+        env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, makeKey_StringUint64Uint64(pubkey, 1, MAX_U64), "", [&](std::string_view k, std::string_view v){
             ParsedKey_StringUint64Uint64 parsedKey(k);
 
-            if (parsedKey.s == pubkey && parsedKey.n1 == 0) {
-                auto levId = lmdb::from_sv<uint64_t>(v);
-                tao::json::value json = tao::json::from_string(getEventJson(txn, decomp, levId));
+            if (parsedKey.s != pubkey || parsedKey.n1 != 1) return false;
 
-                try {
-                    auto content = tao::json::from_string(json.at("content").get_string());
-                    username = content.at("name").get_string();
-                } catch (std::exception &e) {
-                }
-            }
+            auto levId = lmdb::from_sv<uint64_t>(v);
+            tao::json::value json = tao::json::from_string(getEventJson(txn, decomp, levId));
+            std::string parent = getParentEvent(json);
 
-            return false;
-        });
+            comments.emplace_back(Comment{ std::move(json), std::move(parent) });
 
-        if (username.size() == 0) username = to_hex(pubkey.substr(0,4));
+            return true;
+        }, true);
+    }
 
-        userCache.emplace(pubkey, User{ std::string(pubkey), username });
-        return userCache[pubkey];
+    TemplarResult render(lmdb::txn &txn, Decompressor &decomp) {
+        return tmpl::userComments(this);
     }
 };
+
+
+
+void WebServer::reply(const MsgReader::Request *msg, std::string_view r, std::string_view status) {
+    std::string payload = "HTTP/1.0 ";
+    payload += status;
+    payload += "\r\nContent-Length: ";
+    payload += std::to_string(r.size());
+    payload += "\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
+    payload += r;
+
+    tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{msg->connId, msg->res, std::move(payload)}});
+    hubTrigger->send();
+}
+
+
+void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg) {
+    LI << "GOT REQUEST FOR " << msg->url;
+    std::string fakeUrl = "http://localhost";
+    fakeUrl += msg->url;
+    uri u(fakeUrl);
+
+    TemplarResult body;
+    std::string_view code = "200 OK";
+
+    if (u.get_path().starts_with("e/")) {
+        auto eventId = from_hex(u.get_path().substr(2));
+        EventThread et(txn, decomp, eventId);
+        body = et.render(txn, decomp);
+    } else if (u.get_path().starts_with("u/")) {
+        auto pubkey = from_hex(u.get_path().substr(2));
+        UserComments uc(txn, decomp, pubkey);
+        body = uc.render(txn, decomp);
+    } else {
+        body = TemplarResult{ "Not found" };
+        code = "404 Not Found";
+    }
+
+
+    std::string html;
+
+    {
+        struct {
+            TemplarResult body;
+        } ctx = {
+            body,
+        };
+
+        html = tmpl::main(ctx).str;
+    }
+
+    reply(msg, html, code);
+}
+
 
 
 void WebServer::runReader(ThreadPool<MsgReader>::Thread &thr) {
@@ -176,35 +273,12 @@ void WebServer::runReader(ThreadPool<MsgReader>::Thread &thr) {
 
         for (auto &newMsg : newMsgs) {
             if (auto msg = std::get_if<MsgReader::Request>(&newMsg.msg)) {
-                LI << "GOT REQUEST FOR " << msg->url;
-
-                auto respond = [&](const std::string &r){
-                    std::string payload = "HTTP/1.0 200 OK\r\nContent-Length: ";
-                    payload += std::to_string(r.size());
-                    payload += "\r\n\r\n";
-                    payload += r;
-
-                    tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{msg->connId, msg->res, std::move(payload)}});
-                    hubTrigger->send();
-                };
-
-
-                EventThread et(txn, decomp, from_hex("71f42777f35e4636dce9283b88ba9367f66e99b52e1123dc619ef6fcd9567df3"));
-
-                auto body = et.render(txn, decomp);
-                std::string html;
-
-                {
-                    struct {
-                        TemplarResult body;
-                    } ctx = {
-                        body,
-                    };
-
-                    html = tmpl::main(ctx).str;
+                try {
+                    handleRequest(txn, decomp, msg);
+                } catch (std::exception &e) {
+                    reply(msg, "Server error", "500 Server Error");
+                    LE << "500 server error: " << e.what();
                 }
-
-                respond(html);
             }
         }
     }

@@ -1,0 +1,6 @@
+<div class="comments">
+    <div> @(const auto &c : ctx->comments)
+        <a href="/e/$(to_hex(c.parent))">parent</a> ?(c.parent.size())
+        $(c.json.at("content").get_string())
+    </div>
+</div>

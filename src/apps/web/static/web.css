@@ -1,3 +1,11 @@
+/* user comments */
+
+.comments > div {
+    margin-bottom: 30px;
+}
+
+/* event */
+
 .header {
     font-weight: bold
 }
