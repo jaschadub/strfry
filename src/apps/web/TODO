@@ -1,0 +1,17 @@
+launch
+  #[0] tags in message body, or nostr:npub1 tags of NIP-27
+  show messages when a parent link is missing so not connected to root in the thread tree
+    http://localhost:8080/e/nevent1vcj0qkup9r3u3u876zy99ey8mrhdwwg24vh2py05vj7390dg5xmswkfjmh
+  user comments screen
+    grouping by thread
+    timestamps
+    pagination?
+  thread viewer screen
+    algos
+  posting
+  upvotes
+  don't send requests to threads while they are busy
+  styling
+
+
+edit profile

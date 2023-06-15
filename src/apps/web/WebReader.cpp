@@ -1,7 +1,9 @@
 #include "WebServer.h"
 
-#include "DBQuery.h"
+#include "Bech32Utils.h"
 #include "WebTemplates.h"
+#include "DBQuery.h"
+
 
 
 
@@ -89,6 +91,7 @@ std::string getRootEvent(const tao::json::value &json) {
 struct User {
     std::string pubkey;
 
+    std::string npub;
     std::string username;
     tao::json::value kind0Json = tao::json::null;
 
@@ -114,6 +117,7 @@ struct User {
         });
 
         if (username.size() == 0) username = to_hex(pubkey.substr(0,4));
+        npub = encodeBech32Simple("npub", pubkey);
     }
 
     bool kind0Found() {
@@ -326,13 +330,13 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
     if (u.path.size() == 0) {
         body = TemplarResult{ "root" };
     } else if (u.path[0] == "e" && u.path.size() == 2) {
-        EventThread et(txn, decomp, from_hex(u.path[1]));
+        EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
         body = et.render(txn, decomp);
     } else if (u.path[0] == "u" && u.path.size() == 2) {
-        User user(txn, decomp, from_hex(u.path[1]));
+        User user(txn, decomp, decodeBech32Simple(u.path[1]));
         body = user.render(txn, decomp);
     } else if (u.path[0] == "u" && u.path.size() == 3 && u.path[2] == "notes") {
-        UserComments uc(txn, decomp, from_hex(u.path[1]));
+        UserComments uc(txn, decomp, decodeBech32Simple(u.path[1]));
         body = uc.render(txn, decomp);
     } else {
         body = TemplarResult{ "Not found" };

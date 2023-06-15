@@ -1,12 +1,12 @@
 <div class="user">
     <div>
-        No metadata event found for $(to_hex(ctx->pubkey))
+        No metadata event found for $(ctx->npub)
     </div> ?(!ctx->kind0Found())
 
     <table>
         <tr>
-            <th>pubkey</th>
-            <td><pre>$(to_hex(ctx->pubkey))</pre></td>
+            <th>npub</th>
+            <td><pre>$(ctx->npub)</pre></td>
         </tr>
 
         <tr>
@@ -23,5 +23,5 @@
 
     </table> ?(ctx->kind0Found())
 
-    <a href="/u/$(to_hex(ctx->pubkey))/notes">Notes</a>
+    <a href="/u/$(ctx->npub)/notes">Notes</a>
 </div>

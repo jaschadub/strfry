@@ -1,6 +1,6 @@
 <div class="note">
     <div class="header">
-        <a href="/u/$(to_hex(ctx.user->pubkey))">$(ctx.user->username)</a>
+        <a href="/u/$(ctx.user->npub)">$(ctx.user->username)</a>
         | $(ctx.timestamp)
         | <>+$(ctx.ev->upVotes)</> ?(ctx.ev->upVotes)
           <>-$(ctx.ev->downVotes)</> ?(ctx.ev->downVotes)
