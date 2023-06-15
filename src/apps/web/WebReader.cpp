@@ -2,7 +2,6 @@
 
 #include "DBQuery.h"
 #include "WebTemplates.h"
-#include "apps/web/uri.hh"
 
 
 
@@ -37,7 +36,7 @@ std::string getParentEvent(const tao::json::value &json) {
     // Try to find an e-tag with a "reply" type
     for (const auto &t : tags) {
         const auto &tArr = t.get_array();
-        if (tArr.at(0) == "e" && tArr.size() == 4 && tArr.at(3) == "reply") {
+        if (tArr.at(0) == "e" && tArr.size() >= 4 && tArr.at(3) == "reply") {
             parent = from_hex(tArr.at(1).get_string());
             break;
         }
@@ -58,11 +57,40 @@ std::string getParentEvent(const tao::json::value &json) {
     return parent;
 }
 
+std::string getRootEvent(const tao::json::value &json) {
+    std::string root;
+
+    const auto &tags = json.at("tags").get_array();
+
+    // Try to find an e-tag with a "root" type
+    for (const auto &t : tags) {
+        const auto &tArr = t.get_array();
+        if (tArr.at(0) == "e" && tArr.size() >= 4 && tArr.at(3) == "root") {
+            root = from_hex(tArr.at(1).get_string());
+            break;
+        }
+    }
+
+    if (!root.size()) {
+        // Otherwise, assume last e tag is reply
+
+        for (auto it = tags.begin(); it != tags.end(); ++it) {
+            const auto &tArr = it->get_array();
+            if (tArr.at(0) == "e") {
+                root = from_hex(tArr.at(1).get_string());
+                break;
+            }
+        }
+    }
+
+    return root;
+}
+
 struct User {
     std::string pubkey;
 
     std::string username;
-    tao::json::value kind0Json;
+    tao::json::value kind0Json = tao::json::null;
 
     User(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) : pubkey(pubkey) {
         std::string prefix = pubkey;
@@ -86,6 +114,19 @@ struct User {
         });
 
         if (username.size() == 0) username = to_hex(pubkey.substr(0,4));
+    }
+
+    bool kind0Found() {
+        return kind0Json.is_object();
+    }
+
+    std::string getMeta(std::string_view field) {
+        if (kind0Json.get_object().contains(field) && kind0Json.at(field).is_string()) return kind0Json.at(field).get_string();
+        return "";
+    }
+
+    TemplarResult render(lmdb::txn &txn, Decompressor &decomp) {
+        return tmpl::user(this);
     }
 };
 
@@ -209,6 +250,7 @@ struct UserComments {
     struct Comment {
         tao::json::value json;
         std::string parent;
+        std::string root;
     };
 
     std::vector<Comment> comments;
@@ -223,8 +265,9 @@ struct UserComments {
             auto levId = lmdb::from_sv<uint64_t>(v);
             tao::json::value json = tao::json::from_string(getEventJson(txn, decomp, levId));
             std::string parent = getParentEvent(json);
+            std::string root = getRootEvent(json);
 
-            comments.emplace_back(Comment{ std::move(json), std::move(parent) });
+            comments.emplace_back(Comment{ std::move(json), std::move(parent), std::move(root) });
 
             return true;
         }, true);
@@ -250,22 +293,46 @@ void WebServer::reply(const MsgReader::Request *msg, std::string_view r, std::st
 }
 
 
+struct Url {
+    std::vector<std::string_view> path;
+    std::string_view query;
+
+    Url(std::string_view u) {
+        size_t pos;
+
+        if ((pos = u.find("?")) != std::string::npos) {
+            query = u.substr(pos + 1);
+            u = u.substr(0, pos);
+        }
+
+        while ((pos = u.find("/")) != std::string::npos) {
+            if (pos != 0) path.emplace_back(u.substr(0, pos));
+            u = u.substr(pos + 1);
+        }
+
+        if (u.size()) path.emplace_back(u);
+    }
+};
+
 void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg) {
     LI << "GOT REQUEST FOR " << msg->url;
-    std::string fakeUrl = "http://localhost";
-    fakeUrl += msg->url;
-    uri u(fakeUrl);
+    auto startTime = hoytech::curr_time_us();
+
+    Url u(msg->url);
 
     TemplarResult body;
     std::string_view code = "200 OK";
 
-    if (u.get_path().starts_with("e/")) {
-        auto eventId = from_hex(u.get_path().substr(2));
-        EventThread et(txn, decomp, eventId);
+    if (u.path.size() == 0) {
+        body = TemplarResult{ "root" };
+    } else if (u.path[0] == "e" && u.path.size() == 2) {
+        EventThread et(txn, decomp, from_hex(u.path[1]));
         body = et.render(txn, decomp);
-    } else if (u.get_path().starts_with("u/")) {
-        auto pubkey = from_hex(u.get_path().substr(2));
-        UserComments uc(txn, decomp, pubkey);
+    } else if (u.path[0] == "u" && u.path.size() == 2) {
+        User user(txn, decomp, from_hex(u.path[1]));
+        body = user.render(txn, decomp);
+    } else if (u.path[0] == "u" && u.path.size() == 3 && u.path[2] == "notes") {
+        UserComments uc(txn, decomp, from_hex(u.path[1]));
         body = uc.render(txn, decomp);
     } else {
         body = TemplarResult{ "Not found" };
@@ -285,6 +352,7 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
         html = tmpl::main(ctx).str;
     }
 
+    LI << "Reply: " << code << " / " << html.size() << " bytes in " << (hoytech::curr_time_us() - startTime) << "us";
     reply(msg, html, code);
 }
 
