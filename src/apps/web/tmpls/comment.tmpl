@@ -1,9 +1,11 @@
 <div class="note">
     <div class="header">
-        <a href="/u/$(ctx.user->npub)">$(ctx.user->username)</a>
+        <a href="/u/$(ctx.user->npubId)">$(ctx.user->username)</a>
         | $(ctx.timestamp)
         | <>+$(ctx.ev->upVotes)</> ?(ctx.ev->upVotes)
           <>-$(ctx.ev->downVotes)</> ?(ctx.ev->downVotes)
+        | $(to_hex(ctx.ev->getId()))
+        <a href="/e/$(ctx.ev->getParentNoteId())">parent</a> ?(ctx.ev->parent.size())
     </div>
 
     <pre class="content">

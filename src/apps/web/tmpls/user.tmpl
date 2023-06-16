@@ -1,27 +1,27 @@
 <div class="user">
     <div>
-        No metadata event found for $(ctx->npub)
-    </div> ?(!ctx->kind0Found())
+        No metadata event found for $(ctx.npubId)
+    </div> ?(!ctx.kind0Found())
 
     <table>
         <tr>
             <th>npub</th>
-            <td><pre>$(ctx->npub)</pre></td>
+            <td><pre>$(ctx.npubId)</pre></td>
         </tr>
 
         <tr>
             <th>$(field)</th>
-            <td><pre>$(ctx->getMeta(field))</pre></td>
+            <td><pre>$(ctx.getMeta(field))</pre></td>
         </tr> @(const auto &field : { "name", "about" })
 
         <>
             <tr>
                 <th>$(field)</th>
-                <td><pre>$(ctx->getMeta(field))</pre></td>
+                <td><pre>$(ctx.getMeta(field))</pre></td>
             </tr> ?(field != "name" && field != "about")
-        </> @(const auto &[field, v] : ctx->kind0Json.get_object())
+        </> @(const auto &[field, v] : ctx.kind0Json.get_object())
 
-    </table> ?(ctx->kind0Found())
+    </table> ?(ctx.kind0Found())
 
-    <a href="/u/$(ctx->npub)/notes">Notes</a>
+    <a href="/u/$(ctx.npubId)/notes">Notes</a>
 </div>
