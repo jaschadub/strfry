@@ -1,0 +1,13 @@
+<div class="event">
+    $(tmpl::event::header(ctx))
+
+    <pre class="content">
+        $(ctx.content)
+    </pre>
+
+    <div class="replies">
+        <div>
+            $(r)
+        </div> @(const auto &r : ctx.replies)
+    </div> ?(ctx.replies.size())
+</div>

@@ -1,0 +1,15 @@
+<div class="event">
+    <div class="thread-root"> ?(ctx.threadRoot)
+        $(event::header(*ctx.threadRoot))
+
+        <pre class="content">
+            $(ctx.threadRoot->content)
+        </pre>
+    </div>
+
+    $(ctx.foundEvents)
+
+    <div style="color:red"> @(auto &e : ctx.orphanNodes)
+        $(e)
+    </div>
+</div>

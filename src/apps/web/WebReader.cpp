@@ -105,6 +105,10 @@ struct Event {
         return ev.flat_nested()->kind();
     }
 
+    std::string getPubkey() const {
+        return std::string(sv(ev.flat_nested()->pubkey()));
+    }
+
     std::string getNoteId() const {
         return encodeBech32Simple("note", getId());
     }
@@ -115,6 +119,16 @@ struct Event {
 
     std::string getRootNoteId() const {
         return encodeBech32Simple("note", root);
+    }
+
+    std::string summary() const {
+        // FIXME: Use "subject" tag if present?
+        // FIXME: Don't truncate UTF-8 mid-sequence
+
+        const size_t maxLen = 100;
+        const auto &content = json.at("content").get_string();
+        if (content.size() <= maxLen) return content;
+        return content.substr(0, maxLen-3) + "...";
     }
 
 
@@ -170,37 +184,51 @@ struct Event {
 
 struct EventThread {
     std::string rootEventId;
-    bool found = false;
+    bool isRootEventThreadRoot;
     flat_hash_map<std::string, Event> eventCache;
     UserCache userCache;
 
 
-    EventThread(lmdb::txn &txn, Decompressor &decomp, std::string_view id) : rootEventId(std::string(id)) {
+    EventThread(lmdb::txn &txn, Decompressor &decomp, std::string_view id_) : rootEventId(std::string(id_)) {
         try {
-            eventCache.emplace(id, Event::fromId(txn, id));
+            eventCache.emplace(rootEventId, Event::fromId(txn, rootEventId));
         } catch (std::exception &e) {
             return;
         }
 
-        found = true;
 
-        std::string prefix = "e";
-        prefix += id;
+        eventCache.at(rootEventId).populateRootParent(txn, decomp);
+        isRootEventThreadRoot = eventCache.at(rootEventId).root.empty();
 
-        env.generic_foreachFull(txn, env.dbi_Event__tag, prefix, "", [&](std::string_view k, std::string_view v){
-            ParsedKey_StringUint64 parsedKey(k);
-            if (parsedKey.s != prefix) return false;
 
-            auto levId = lmdb::from_sv<uint64_t>(v);
-            Event e = Event::fromLevId(txn, levId);
-            std::string id = e.getId();
-            eventCache.emplace(id, std::move(e));
+        std::vector<std::string> pendingQueue;
+        pendingQueue.emplace_back(rootEventId);
 
-            return true;
-        });
+        while (pendingQueue.size()) {
+            auto currId = std::move(pendingQueue.back());
+            pendingQueue.pop_back();
+
+            std::string prefix = "e";
+            prefix += currId;
+
+            env.generic_foreachFull(txn, env.dbi_Event__tag, prefix, "", [&](std::string_view k, std::string_view v){
+                ParsedKey_StringUint64 parsedKey(k);
+                if (parsedKey.s != prefix) return false;
+
+                auto levId = lmdb::from_sv<uint64_t>(v);
+                Event e = Event::fromLevId(txn, levId);
+                std::string childEventId = e.getId();
+
+                if (eventCache.contains(childEventId)) return true;
+
+                eventCache.emplace(childEventId, std::move(e));
+                if (!isRootEventThreadRoot) pendingQueue.emplace_back(childEventId);
+
+                return true;
+            });
+        }
 
         for (auto &[id, e] : eventCache) {
-            e.populateJson(txn, decomp);
             e.populateRootParent(txn, decomp);
 
             if (e.parent.size()) {
@@ -208,7 +236,7 @@ struct EventThread {
                 if (p != eventCache.end()) {
                     auto &parent = p->second;
 
-                    auto kind = e.ev.flat_nested()->kind();
+                    auto kind = e.getKind();
 
                     if (kind == 1) {
                         parent.children.insert(id);
@@ -225,10 +253,16 @@ struct EventThread {
     }
 
     TemplarResult render(lmdb::txn &txn, Decompressor &decomp) {
-        if (!found) return TemplarResult{ "event not found" };
-
         auto now = hoytech::curr_time_s();
         flat_hash_set<uint64_t> processedLevIds;
+
+        struct RenderedEvent {
+            std::string content;
+            std::string timestamp;
+            const Event *ev = nullptr;
+            const User *user = nullptr;
+            std::vector<TemplarResult> replies;
+        };
 
         std::function<TemplarResult(const std::string &)> process = [&](const std::string &id){
             auto p = eventCache.find(id);
@@ -236,30 +270,43 @@ struct EventThread {
             const auto &elem = p->second;
             processedLevIds.insert(elem.ev.primaryKeyId);
 
-            struct {
-                std::string comment;
-                std::string timestamp;
-                const Event *ev;
-                const User *user;
-                std::vector<TemplarResult> replies;
-            } ctx;
+            RenderedEvent ctx;
 
-            ctx.comment = elem.json.at("content").get_string();
+            ctx.content = elem.json.at("content").get_string();
             ctx.timestamp = renderTimestamp(now, elem.json.at("created_at").get_unsigned());
-            ctx.user = userCache.getUser(txn, decomp, std::string(sv(elem.ev.flat_nested()->pubkey())));
+            ctx.user = userCache.getUser(txn, decomp, elem.getPubkey());
             ctx.ev = &elem;
 
             for (const auto &childId : elem.children) {
                 ctx.replies.emplace_back(process(childId));
             }
 
-            return tmpl::comment(ctx);
+            return tmpl::event::event(ctx);
         };
 
+
+
+
         struct {
+            std::optional<RenderedEvent> threadRoot;
             TemplarResult foundEvents;
             std::vector<TemplarResult> orphanNodes;
         } ctx;
+
+        std::optional<Event> summaryRootEvent;
+
+        if (!isRootEventThreadRoot) {
+            summaryRootEvent = Event::fromId(txn, eventCache.at(rootEventId).root);
+            summaryRootEvent->populateJson(txn, decomp);
+
+            ctx.threadRoot = RenderedEvent();
+            auto &tr = *ctx.threadRoot;
+
+            tr.content = summaryRootEvent->summary();
+            tr.timestamp = renderTimestamp(now, summaryRootEvent->json.at("created_at").get_unsigned());
+            tr.ev = &*summaryRootEvent;
+            tr.user = userCache.getUser(txn, decomp, summaryRootEvent->getPubkey());
+        }
 
         ctx.foundEvents = process(rootEventId);
 
@@ -270,7 +317,7 @@ struct EventThread {
             ctx.orphanNodes.emplace_back(process(id));
         }
 
-        return tmpl::allevs(ctx);
+        return tmpl::events(ctx);
     }
 };
 
