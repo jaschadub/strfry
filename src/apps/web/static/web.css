@@ -7,12 +7,20 @@ pre {
 
 /* user comments */
 
-.comments > div {
+.user-comments > div {
     margin-bottom: 30px;
+    border-bottom: 1px solid black;
 }
 
 
 /* event */
+
+.event {
+}
+
+.abbrev {
+    font-size: 80%;
+}
 
 .header {
     font-weight: bold

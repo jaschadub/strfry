@@ -1,13 +1,19 @@
-<div class="event">
-    $(tmpl::event::header(ctx))
+<div class='event $(ctx.abbrev ? "abbrev" : "")'>
+    <> ?(ctx.eventPresent)
+        $(tmpl::event::header(ctx))
 
-    <pre class="content">
-        $(ctx.content)
-    </pre>
+        <pre class="content">
+            $(ctx.content)
+        </pre>
+    </>
+
+    <> ?(!ctx.eventPresent)
+        <div style="color: red">Event not found</div>
+    </>
 
     <div class="replies">
-        <div>
+        <div> @(const auto &r : ctx.replies)
             $(r)
-        </div> @(const auto &r : ctx.replies)
+        </div>
     </div> ?(ctx.replies.size())
 </div>

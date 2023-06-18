@@ -70,7 +70,6 @@ struct Event {
     std::string parent;
     std::string root;
 
-    flat_hash_set<std::string> children;
     uint64_t upVotes = 0;
     uint64_t downVotes = 0;
 
@@ -124,6 +123,7 @@ struct Event {
     std::string summary() const {
         // FIXME: Use "subject" tag if present?
         // FIXME: Don't truncate UTF-8 mid-sequence
+        // FIXME: Don't put ellipsis if truncated text ends in punctuation
 
         const size_t maxLen = 100;
         const auto &content = json.at("content").get_string();
@@ -186,8 +186,15 @@ struct EventThread {
     std::string rootEventId;
     bool isRootEventThreadRoot;
     flat_hash_map<std::string, Event> eventCache;
-    UserCache userCache;
 
+    UserCache userCache; //FIXME move external
+    flat_hash_map<std::string, flat_hash_set<std::string>> children; // parentEventId -> childEventIds
+
+
+    // Load all events under an eventId
+
+    EventThread(std::string rootEventId, bool isRootEventThreadRoot, flat_hash_map<std::string, Event> &&eventCache)
+        : rootEventId(rootEventId), isRootEventThreadRoot(isRootEventThreadRoot), eventCache(eventCache) {}
 
     EventThread(lmdb::txn &txn, Decompressor &decomp, std::string_view id_) : rootEventId(std::string(id_)) {
         try {
@@ -231,16 +238,17 @@ struct EventThread {
         for (auto &[id, e] : eventCache) {
             e.populateRootParent(txn, decomp);
 
+            auto kind = e.getKind();
+
             if (e.parent.size()) {
-                auto p = eventCache.find(e.parent);
-                if (p != eventCache.end()) {
-                    auto &parent = p->second;
+                if (kind == 1) {
+                    if (!children.contains(e.parent)) children.emplace(std::piecewise_construct, std::make_tuple(e.parent), std::make_tuple());
+                    children.at(e.parent).insert(id);
+                } else if (kind == 7) {
+                    auto p = eventCache.find(e.parent);
+                    if (p != eventCache.end()) {
+                        auto &parent = p->second;
 
-                    auto kind = e.getKind();
-
-                    if (kind == 1) {
-                        parent.children.insert(id);
-                    } else if (kind == 7) {
                         if (e.json.at("content").get_string() == "-") {
                             parent.downVotes++;
                         } else {
@@ -252,7 +260,8 @@ struct EventThread {
         }
     }
 
-    TemplarResult render(lmdb::txn &txn, Decompressor &decomp) {
+
+    TemplarResult render(lmdb::txn &txn, Decompressor &decomp, std::optional<std::string> focusOnPubkey = std::nullopt) {
         auto now = hoytech::curr_time_s();
         flat_hash_set<uint64_t> processedLevIds;
 
@@ -261,52 +270,46 @@ struct EventThread {
             std::string timestamp;
             const Event *ev = nullptr;
             const User *user = nullptr;
+            bool eventPresent = true;
+            bool abbrev = false;
             std::vector<TemplarResult> replies;
         };
 
         std::function<TemplarResult(const std::string &)> process = [&](const std::string &id){
-            auto p = eventCache.find(id);
-            if (p == eventCache.end()) throw herr("unknown id");
-            const auto &elem = p->second;
-            processedLevIds.insert(elem.ev.primaryKeyId);
-
             RenderedEvent ctx;
 
-            ctx.content = elem.json.at("content").get_string();
-            ctx.timestamp = renderTimestamp(now, elem.json.at("created_at").get_unsigned());
-            ctx.user = userCache.getUser(txn, decomp, elem.getPubkey());
-            ctx.ev = &elem;
+            auto p = eventCache.find(id);
+            if (p != eventCache.end()) {
+                const auto &elem = p->second;
+                processedLevIds.insert(elem.ev.primaryKeyId);
 
-            for (const auto &childId : elem.children) {
-                ctx.replies.emplace_back(process(childId));
+                auto pubkey = elem.getPubkey();
+                ctx.abbrev = focusOnPubkey && *focusOnPubkey != pubkey;
+
+                ctx.content = ctx.abbrev ? elem.summary() : elem.json.at("content").get_string();
+                ctx.timestamp = renderTimestamp(now, elem.json.at("created_at").get_unsigned());
+                ctx.user = userCache.getUser(txn, decomp, elem.getPubkey());
+                ctx.eventPresent = true;
+
+                ctx.ev = &elem;
+            } else {
+                ctx.eventPresent = false;
+            }
+
+            if (children.contains(id)) {
+                for (const auto &childId : children.at(id)) {
+                    ctx.replies.emplace_back(process(childId));
+                }
             }
 
             return tmpl::event::event(ctx);
         };
 
 
-
-
         struct {
-            std::optional<RenderedEvent> threadRoot;
             TemplarResult foundEvents;
             std::vector<TemplarResult> orphanNodes;
         } ctx;
-
-        std::optional<Event> summaryRootEvent;
-
-        if (!isRootEventThreadRoot) {
-            summaryRootEvent = Event::fromId(txn, eventCache.at(rootEventId).root);
-            summaryRootEvent->populateJson(txn, decomp);
-
-            ctx.threadRoot = RenderedEvent();
-            auto &tr = *ctx.threadRoot;
-
-            tr.content = summaryRootEvent->summary();
-            tr.timestamp = renderTimestamp(now, summaryRootEvent->json.at("created_at").get_unsigned());
-            tr.ev = &*summaryRootEvent;
-            tr.user = userCache.getUser(txn, decomp, summaryRootEvent->getPubkey());
-        }
 
         ctx.foundEvents = process(rootEventId);
 
@@ -322,37 +325,96 @@ struct EventThread {
 };
 
 
-struct UserComments {
+
+struct UserEvents {
     User u;
 
-    struct Comment {
-        tao::json::value json;
-        std::string parent;
-        std::string root;
+    struct EventCluster {
+        std::string rootEventId;
+        flat_hash_map<std::string, Event> eventCache; // eventId (non-root) -> Event
+        bool isRootEventFromUser = false;
+        bool isRootPresent = false;
+        uint64_t rootEventTimestamp = 0;
+
+        EventCluster(std::string rootEventId) : rootEventId(rootEventId) {}
     };
 
-    std::vector<Comment> comments;
+        std::vector<EventCluster> eventClusterArr;
 
+    UserEvents(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) : u(txn, decomp, pubkey) {
+        flat_hash_map<std::string, EventCluster> eventClusters; // eventId (root) -> EventCluster
 
-    UserComments(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) : u(txn, decomp, pubkey) {
         env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, makeKey_StringUint64Uint64(pubkey, 1, MAX_U64), "", [&](std::string_view k, std::string_view v){
             ParsedKey_StringUint64Uint64 parsedKey(k);
-
             if (parsedKey.s != pubkey || parsedKey.n1 != 1) return false;
 
-            auto levId = lmdb::from_sv<uint64_t>(v);
-            tao::json::value json = tao::json::from_string(getEventJson(txn, decomp, levId));
-            std::string parent = ""; // getParentEvent(json);
-            std::string root = ""; // getRootEvent(json);
+            Event ev = Event::fromLevId(txn, lmdb::from_sv<uint64_t>(v));
+            ev.populateRootParent(txn, decomp);
+            auto id = ev.getId();
 
-            comments.emplace_back(Comment{ std::move(json), std::move(parent), std::move(root) });
+            auto installRoot = [&](std::string rootId, Event &&rootEvent){
+                rootEvent.populateRootParent(txn, decomp);
+
+                eventClusters.emplace(rootId, rootId);
+                auto &cluster = eventClusters.at(rootId);
+
+                cluster.isRootPresent = true;
+                cluster.isRootEventFromUser = rootEvent.getPubkey() == u.pubkey;
+                cluster.rootEventTimestamp = rootEvent.ev.flat_nested()->created_at();
+                cluster.eventCache.emplace(rootId, std::move(rootEvent));
+            };
+
+            if (ev.root.size()) {
+                // Event is not root
+
+                if (!eventClusters.contains(ev.root)) {
+                    try {
+                        installRoot(ev.root, Event::fromId(txn, ev.root));
+                    } catch (std::exception &e) {
+                        // no root event
+                        eventClusters.emplace(ev.root, ev.root);
+                        auto &cluster = eventClusters.at(ev.root);
+
+                        cluster.isRootPresent = true;
+                    }
+                }
+
+                eventClusters.at(ev.root).eventCache.emplace(id, std::move(ev));
+            } else {
+                // Event is root
+
+                if (!eventClusters.contains(ev.root)) {
+                    installRoot(id, std::move(ev));
+                }
+            }
 
             return true;
         }, true);
+
+        for (auto &[k, v] : eventClusters) {
+            eventClusterArr.emplace_back(std::move(v));
+        }
+
+        std::sort(eventClusterArr.begin(), eventClusterArr.end(), [](auto &a, auto &b){ return b.rootEventTimestamp < a.rootEventTimestamp; });
     }
 
     TemplarResult render(lmdb::txn &txn, Decompressor &decomp) {
-        return tmpl::userComments(this);
+        std::vector<TemplarResult> renderedThreads;
+
+        for (auto &cluster : eventClusterArr) {
+            EventThread eventThread(cluster.rootEventId, cluster.isRootEventFromUser, std::move(cluster.eventCache));
+            renderedThreads.emplace_back(eventThread.render(txn, decomp, u.pubkey));
+        }
+
+        struct {
+            std::vector<TemplarResult> &renderedThreads;
+            User &u;
+        } ctx = {
+            renderedThreads,
+            u,
+        };
+
+        return tmpl::user::comments(ctx);
     }
 };
 
@@ -414,9 +476,9 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
         body = et.render(txn, decomp);
     } else if (u.path[0] == "u" && u.path.size() == 2) {
         User user(txn, decomp, decodeBech32Simple(u.path[1]));
-        body = tmpl::user(user);
+        body = tmpl::user::metadata(user);
     } else if (u.path[0] == "u" && u.path.size() == 3 && u.path[2] == "notes") {
-        UserComments uc(txn, decomp, decodeBech32Simple(u.path[1]));
+        UserEvents uc(txn, decomp, decodeBech32Simple(u.path[1]));
         body = uc.render(txn, decomp);
     } else {
         body = TemplarResult{ "Not found" };
