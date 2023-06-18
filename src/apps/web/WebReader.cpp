@@ -13,22 +13,35 @@ struct User {
 
     std::string npubId;
     std::string username;
-    tao::json::value kind0Json = tao::json::null;
+    std::optional<tao::json::value> kind0Json;
+    std::optional<tao::json::value> kind3Event;
 
     User(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) : pubkey(pubkey) {
-        std::string prefix = pubkey;
-        prefix += lmdb::to_sv<uint64_t>(0);
+        npubId = encodeBech32Simple("npub", pubkey);
 
-        env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, prefix, "", [&](std::string_view k, std::string_view v){
+        kind0Json = loadKindJson(txn, decomp, 0);
+
+        try {
+            if (kind0Json) username = kind0Json->at("name").get_string();
+        } catch (std::exception &e) {
+        }
+
+        if (username.size() == 0) username = to_hex(pubkey.substr(0,4));
+    }
+
+    std::optional<tao::json::value> loadKindJson(lmdb::txn &txn, Decompressor &decomp, uint64_t kind) {
+        std::optional<tao::json::value> output;
+
+        env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, makeKey_StringUint64Uint64(pubkey, kind, 0), "", [&](std::string_view k, std::string_view v){
             ParsedKey_StringUint64Uint64 parsedKey(k);
 
-            if (parsedKey.s == pubkey && parsedKey.n1 == 0) {
+            if (parsedKey.s == pubkey && parsedKey.n1 == kind) {
                 auto levId = lmdb::from_sv<uint64_t>(v);
                 tao::json::value json = tao::json::from_string(getEventJson(txn, decomp, levId));
 
                 try {
-                    kind0Json = tao::json::from_string(json.at("content").get_string());
-                    username = kind0Json.at("name").get_string();
+                    output = tao::json::from_string(json.at("content").get_string());
+                    if (!output->is_object()) output = std::nullopt;
                 } catch (std::exception &e) {
                 }
             }
@@ -36,17 +49,38 @@ struct User {
             return false;
         });
 
-        if (username.size() == 0) username = to_hex(pubkey.substr(0,4));
-        npubId = encodeBech32Simple("npub", pubkey);
+        return output;
+    }
+
+    std::optional<tao::json::value> loadKindEvent(lmdb::txn &txn, Decompressor &decomp, uint64_t kind) {
+        std::optional<tao::json::value> output;
+
+        env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, makeKey_StringUint64Uint64(pubkey, kind, 0), "", [&](std::string_view k, std::string_view v){
+            ParsedKey_StringUint64Uint64 parsedKey(k);
+
+            if (parsedKey.s == pubkey && parsedKey.n1 == kind) {
+                auto levId = lmdb::from_sv<uint64_t>(v);
+                output = tao::json::from_string(getEventJson(txn, decomp, levId));
+            }
+
+            return false;
+        });
+
+        return output;
     }
 
     bool kind0Found() const {
-        return kind0Json.is_object();
+        return !!kind0Json;
     }
 
     std::string getMeta(std::string_view field) const {
-        if (kind0Json.get_object().contains(field) && kind0Json.at(field).is_string()) return kind0Json.at(field).get_string();
+        if (!kind0Json) throw herr("can't getMeta because user doesn't have kind 0");
+        if (kind0Json->get_object().contains(field) && kind0Json->at(field).is_string()) return kind0Json->at(field).get_string();
         return "";
+    }
+
+    void populateContactList(lmdb::txn &txn, Decompressor &decomp) {
+        kind3Event = loadKindEvent(txn, decomp, 3);
     }
 };
 
@@ -466,22 +500,44 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
 
     Url u(msg->url);
 
-    TemplarResult body;
+    UserCache userCache;
+
+    std::optional<TemplarResult> body;
     std::string_view code = "200 OK";
 
     if (u.path.size() == 0) {
         body = TemplarResult{ "root" };
-    } else if (u.path[0] == "e" && u.path.size() == 2) {
-        EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
-        UserCache userCache;
-        body = et.render(txn, decomp, userCache);
-    } else if (u.path[0] == "u" && u.path.size() == 2) {
-        User user(txn, decomp, decodeBech32Simple(u.path[1]));
-        body = tmpl::user::metadata(user);
-    } else if (u.path[0] == "u" && u.path.size() == 3 && u.path[2] == "notes") {
-        UserEvents uc(txn, decomp, decodeBech32Simple(u.path[1]));
-        body = uc.render(txn, decomp);
-    } else {
+    } else if (u.path[0] == "e") {
+        if (u.path.size() == 2) {
+            EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
+            body = et.render(txn, decomp, userCache);
+        }
+    } else if (u.path[0] == "u") {
+        if (u.path.size() == 2) {
+            User user(txn, decomp, decodeBech32Simple(u.path[1]));
+            body = tmpl::user::metadata(user);
+        } else if (u.path.size() == 3) {
+            if (u.path[2] == "notes") {
+                UserEvents uc(txn, decomp, decodeBech32Simple(u.path[1]));
+                body = uc.render(txn, decomp);
+            } else if (u.path[2] == "follows") {
+                User user(txn, decomp, decodeBech32Simple(u.path[1]));
+                user.populateContactList(txn, decomp);
+
+                struct {
+                    User &user;
+                    std::function<const User*(const std::string &)> getUser;
+                } ctx = {
+                    user,
+                    [&](const std::string &pubkey){ return userCache.getUser(txn, decomp, pubkey); },
+                };
+
+                body = tmpl::user::follows(ctx);
+            }
+        }
+    }
+
+    if (!body) {
         body = TemplarResult{ "Not found" };
         code = "404 Not Found";
     }
@@ -493,7 +549,7 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
         struct {
             TemplarResult body;
         } ctx = {
-            body,
+            *body,
         };
 
         html = tmpl::main(ctx).str;

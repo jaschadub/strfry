@@ -1,18 +1,17 @@
 launch
   #[0] tags in message body, or nostr:npub1 tags of NIP-27
-  show messages when a parent link is missing so not connected to root in the thread tree
+  export jsonl, rss
   user comments screen
-    grouping by thread
-    timestamps
+    highlight user's name in green or something to call attention to their comments
     ? pagination
   user screen
-    following
     ? followers
   thread viewer screen
     algos
   posting
-  upvotes
-  don't send requests to threads while they are busy
+    upvote/downvote/flag buttons
+  perf: don't send requests to threads while they are busy
+  deflate
   styling
 
 

@@ -1,6 +1,8 @@
 <div class="header">
     <a href="/u/$(ctx.user->npubId)">$(ctx.user->username)</a>
     | <a href="/e/$(ctx.ev->getNoteId())">$(ctx.timestamp)</a>
+    <> | <a href="/e/$(ctx.ev->getRootNoteId())">root</a> </> ?(ctx.ev->root.size())
+    <> | <a href="/e/$(ctx.ev->getNoteId())">show full thread</a> </> ?(ctx.ev->root.empty())
     <> | <a href="/e/$(ctx.ev->getParentNoteId())">parent</a> </> ?(ctx.ev->parent.size())
     | <>+$(ctx.ev->upVotes)</> ?(ctx.ev->upVotes) <>-$(ctx.ev->downVotes)</> ?(ctx.ev->downVotes)
 </div>

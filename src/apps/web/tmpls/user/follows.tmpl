@@ -1,0 +1,41 @@
+<div class="user-follows">
+    <div> ?(!ctx.user.kind3Event)
+        No kind 3 contact list found for $(ctx.user.npubId)
+    </div>
+
+    <table> ?(ctx.user.kind3Event)
+        <tr>
+            <th>user</th>
+            <th>main relay</th>
+            <th>petname</th>
+        </tr>
+
+        <> @(const auto &tagJson : ctx.user.kind3Event->at("tags").get_array())
+            $;(
+                const auto &tag = tagJson.get_array();
+                if (tag.size() < 2) continue;
+
+                auto &pubkey = tag.at(1).get_string();
+                auto *u = ctx.getUser(from_hex(pubkey));
+
+                std::string relay, petname;
+                if (tag.size() >= 3) relay = tag.at(2).get_string();
+                if (tag.size() >= 4) petname = tag.at(3).get_string();
+            )
+            <tr>
+                <td>
+                    <a href="/u/$(u->npubId)">
+                        $(u->username.size() ? u->username : pubkey.substr(0, 8) + "...")
+                    </a>
+                </td>
+                <td>
+                    $(relay)
+                </td>
+                <td>
+                    $(petname)
+                </td>
+            </tr>
+        </>
+
+    </table>
+</div>
