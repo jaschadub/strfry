@@ -187,7 +187,6 @@ struct EventThread {
     bool isRootEventThreadRoot;
     flat_hash_map<std::string, Event> eventCache;
 
-    UserCache userCache; //FIXME move external
     flat_hash_map<std::string, flat_hash_set<std::string>> children; // parentEventId -> childEventIds
 
 
@@ -261,7 +260,7 @@ struct EventThread {
     }
 
 
-    TemplarResult render(lmdb::txn &txn, Decompressor &decomp, std::optional<std::string> focusOnPubkey = std::nullopt) {
+    TemplarResult render(lmdb::txn &txn, Decompressor &decomp, UserCache &userCache, std::optional<std::string> focusOnPubkey = std::nullopt) {
         auto now = hoytech::curr_time_s();
         flat_hash_set<uint64_t> processedLevIds;
 
@@ -400,10 +399,11 @@ struct UserEvents {
 
     TemplarResult render(lmdb::txn &txn, Decompressor &decomp) {
         std::vector<TemplarResult> renderedThreads;
+        UserCache userCache;
 
         for (auto &cluster : eventClusterArr) {
             EventThread eventThread(cluster.rootEventId, cluster.isRootEventFromUser, std::move(cluster.eventCache));
-            renderedThreads.emplace_back(eventThread.render(txn, decomp, u.pubkey));
+            renderedThreads.emplace_back(eventThread.render(txn, decomp, userCache, u.pubkey));
         }
 
         struct {
@@ -473,7 +473,8 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
         body = TemplarResult{ "root" };
     } else if (u.path[0] == "e" && u.path.size() == 2) {
         EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
-        body = et.render(txn, decomp);
+        UserCache userCache;
+        body = et.render(txn, decomp, userCache);
     } else if (u.path[0] == "u" && u.path.size() == 2) {
         User user(txn, decomp, decodeBech32Simple(u.path[1]));
         body = tmpl::user::metadata(user);
