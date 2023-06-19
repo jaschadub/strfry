@@ -138,6 +138,10 @@ struct Event {
         return ev.flat_nested()->kind();
     }
 
+    uint64_t getCreatedAt() const {
+        return ev.flat_nested()->created_at();
+    }
+
     std::string getPubkey() const {
         return std::string(sv(ev.flat_nested()->pubkey()));
     }
@@ -298,6 +302,11 @@ struct EventThread {
         auto now = hoytech::curr_time_s();
         flat_hash_set<uint64_t> processedLevIds;
 
+        struct Reply {
+            uint64_t timestamp;
+            TemplarResult rendered;
+        };
+
         struct RenderedEvent {
             std::string content;
             std::string timestamp;
@@ -305,7 +314,7 @@ struct EventThread {
             const User *user = nullptr;
             bool eventPresent = true;
             bool abbrev = false;
-            std::vector<TemplarResult> replies;
+            std::vector<Reply> replies;
         };
 
         std::function<TemplarResult(const std::string &)> process = [&](const std::string &id){
@@ -320,7 +329,7 @@ struct EventThread {
                 ctx.abbrev = focusOnPubkey && *focusOnPubkey != pubkey;
 
                 ctx.content = ctx.abbrev ? elem.summary() : elem.json.at("content").get_string();
-                ctx.timestamp = renderTimestamp(now, elem.json.at("created_at").get_unsigned());
+                ctx.timestamp = renderTimestamp(now, elem.getCreatedAt());
                 ctx.user = userCache.getUser(txn, decomp, elem.getPubkey());
                 ctx.eventPresent = true;
 
@@ -331,8 +340,14 @@ struct EventThread {
 
             if (children.contains(id)) {
                 for (const auto &childId : children.at(id)) {
-                    ctx.replies.emplace_back(process(childId));
+                    auto timestamp = MAX_U64;
+                    auto p = eventCache.find(childId);
+                    if (p != eventCache.end()) timestamp = p->second.getCreatedAt();
+
+                    ctx.replies.emplace_back(timestamp, process(childId));
                 }
+
+                std::sort(ctx.replies.begin(), ctx.replies.end(), [](auto &a, auto &b){ return a.timestamp < b.timestamp; });
             }
 
             return tmpl::event::event(ctx);
@@ -341,7 +356,7 @@ struct EventThread {
 
         struct {
             TemplarResult foundEvents;
-            std::vector<TemplarResult> orphanNodes;
+            std::vector<Reply> orphanNodes;
         } ctx;
 
         ctx.foundEvents = process(rootEventId);
@@ -350,8 +365,10 @@ struct EventThread {
             if (processedLevIds.contains(e.ev.primaryKeyId)) continue;
             if (e.getKind() != 1) continue;
 
-            ctx.orphanNodes.emplace_back(process(id));
+            ctx.orphanNodes.emplace_back(e.getCreatedAt(), process(id));
         }
+
+        std::sort(ctx.orphanNodes.begin(), ctx.orphanNodes.end(), [](auto &a, auto &b){ return a.timestamp < b.timestamp; });
 
         return tmpl::events(ctx);
     }
@@ -393,7 +410,7 @@ struct UserEvents {
 
                 cluster.isRootPresent = true;
                 cluster.isRootEventFromUser = rootEvent.getPubkey() == u.pubkey;
-                cluster.rootEventTimestamp = rootEvent.ev.flat_nested()->created_at();
+                cluster.rootEventTimestamp = rootEvent.getCreatedAt();
                 cluster.eventCache.emplace(rootId, std::move(rootEvent));
             };
 

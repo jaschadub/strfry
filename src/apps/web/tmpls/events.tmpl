@@ -2,6 +2,6 @@
     $(ctx.foundEvents)
 
     <div class="replies"> @(auto &e : ctx.orphanNodes)
-        $(e)
+        $(e.rendered)
     </div>
 </div>

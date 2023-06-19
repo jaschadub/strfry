@@ -13,7 +13,7 @@
 
     <div class="replies">
         <div> @(const auto &r : ctx.replies)
-            $(r)
+            $(r.rendered)
         </div>
     </div> ?(ctx.replies.size())
 </div>

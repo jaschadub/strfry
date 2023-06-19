@@ -1,18 +1,22 @@
-launch
-  #[0] tags in message body, or nostr:npub1 tags of NIP-27
+read
+  ! thread viewer screen. algos?
   export jsonl, rss
-  user comments screen
-    highlight user's name in green or something to call attention to their comments
-    ? pagination
-  user screen
-    ? followers
-  thread viewer screen
-    algos
-  posting
-    upvote/downvote/flag buttons
-  perf: don't send requests to threads while they are busy
+  #[0] tags in message body, or nostr:npub1 tags of NIP-27
+  make URLs clickable
+  non-500 error pages when bech32 fails to parse, for example
+  smarter truncation/abbrev (try to cut at a sentence, or word boundary)
+  ? pagination on user comments screen
+  ? followers
+
+styling
+  abbrev comments should be smaller? non-pre tag?
+  on user comments screen, highlight user's name in green or something to call attention to their comments
+
+perf
+  don't send requests to threads while they are busy
   deflate
-  styling
 
-
-edit profile
+write
+  posting
+  upvote/downvote/flag buttons
+  ? edit profile (or maybe just send them to https://metadata.nostr.com/)
