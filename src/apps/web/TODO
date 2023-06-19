@@ -16,6 +16,9 @@ perf
   don't send requests to threads while they are busy
   deflate
 
+misc
+  nip-05 checkmarks
+
 write
   posting
   upvote/downvote/flag buttons

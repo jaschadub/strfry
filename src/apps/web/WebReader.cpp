@@ -389,7 +389,7 @@ struct UserEvents {
         EventCluster(std::string rootEventId) : rootEventId(rootEventId) {}
     };
 
-        std::vector<EventCluster> eventClusterArr;
+    std::vector<EventCluster> eventClusterArr;
 
     UserEvents(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) : u(txn, decomp, pubkey) {
         flat_hash_map<std::string, EventCluster> eventClusters; // eventId (root) -> EventCluster
@@ -472,17 +472,38 @@ struct UserEvents {
 
 
 
+std::string exportUserEvents(lmdb::txn &txn, Decompressor &decomp, std::string_view pubkey) {
+    std::string output;
+
+    env.generic_foreachFull(txn, env.dbi_Event__pubkey, makeKey_StringUint64(pubkey, MAX_U64), "", [&](std::string_view k, std::string_view v){
+        ParsedKey_StringUint64 parsedKey(k);
+        if (parsedKey.s != pubkey) return false;
+
+        uint64_t levId = lmdb::from_sv<uint64_t>(v);
+        output += getEventJson(txn, decomp, levId);
+        output += "\n";
+
+        return true;
+    }, true);
+
+    return output;
+}
 
 
 
 
 
-void WebServer::reply(const MsgReader::Request *msg, std::string_view r, std::string_view status) {
+
+
+
+void WebServer::reply(const MsgReader::Request *msg, std::string_view r, std::string_view status, std::string_view contentType) {
     std::string payload = "HTTP/1.0 ";
     payload += status;
     payload += "\r\nContent-Length: ";
     payload += std::to_string(r.size());
-    payload += "\r\nContent-Type: text/html; charset=utf-8\r\n\r\n";
+    payload += "\r\nContent-Type: ";
+    payload += contentType;
+    payload += "\r\n\r\n";
     payload += r;
 
     tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{msg->connId, msg->res, std::move(payload)}});
@@ -519,8 +540,10 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
 
     UserCache userCache;
 
+    std::optional<std::string> rawBody;
     std::optional<TemplarResult> body;
     std::string_view code = "200 OK";
+    std::string_view contentType = "text/html; charset=utf-8";
 
     if (u.path.size() == 0) {
         body = TemplarResult{ "root" };
@@ -537,6 +560,9 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
             if (u.path[2] == "notes") {
                 UserEvents uc(txn, decomp, decodeBech32Simple(u.path[1]));
                 body = uc.render(txn, decomp);
+            } else if (u.path[2] == "export.jsonl") {
+                rawBody = exportUserEvents(txn, decomp, decodeBech32Simple(u.path[1]));
+                contentType = "application/json; charset=utf-8";
             } else if (u.path[2] == "follows") {
                 User user(txn, decomp, decodeBech32Simple(u.path[1]));
                 user.populateContactList(txn, decomp);
@@ -554,26 +580,28 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
         }
     }
 
-    if (!body) {
-        body = TemplarResult{ "Not found" };
-        code = "404 Not Found";
-    }
 
 
-    std::string html;
 
-    {
+    std::string responseData;
+
+    if (body) {
         struct {
             TemplarResult body;
         } ctx = {
             *body,
         };
 
-        html = tmpl::main(ctx).str;
+        responseData = std::move(tmpl::main(ctx).str);
+    } else if (rawBody) {
+        responseData = std::move(*rawBody);
+    } else {
+        body = TemplarResult{ "Not found" };
+        code = "404 Not Found";
     }
 
-    LI << "Reply: " << code << " / " << html.size() << " bytes in " << (hoytech::curr_time_us() - startTime) << "us";
-    reply(msg, html, code);
+    LI << "Reply: " << code << " / " << responseData.size() << " bytes in " << (hoytech::curr_time_us() - startTime) << "us";
+    reply(msg, responseData, code, contentType);
 }
 
 

@@ -56,6 +56,6 @@ struct WebServer {
     void runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr);
 
     void runReader(ThreadPool<MsgReader>::Thread &thr);
-    void reply(const MsgReader::Request *msg, std::string_view r, std::string_view status = "200 OK");
+    void reply(const MsgReader::Request *msg, std::string_view r, std::string_view status = "200 OK", std::string_view contentType = "text/html; charset=utf-8");
     void handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg);
 };
