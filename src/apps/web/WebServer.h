@@ -19,6 +19,7 @@
 
 struct MsgHttpsocket : NonCopyable {
     struct Send {
+        uint64_t lockedThreadId;
         uint64_t connId;
         uWS::HttpResponse *res;
         std::string payload;
@@ -31,6 +32,7 @@ struct MsgHttpsocket : NonCopyable {
 
 struct MsgReader : NonCopyable {
     struct Request {
+        uint64_t lockedThreadId;
         uint64_t connId;
         uWS::HttpResponse *res;
         std::string url;

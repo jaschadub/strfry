@@ -541,7 +541,7 @@ void WebServer::reply(const MsgReader::Request *msg, std::string_view body, std:
     payload += "Connection: Keep-Alive\r\n\r\n";
     payload += body;
 
-    tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{msg->connId, msg->res, std::move(payload)}});
+    tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{msg->lockedThreadId, msg->connId, msg->res, std::move(payload)}});
     hubTrigger->send();
 }
 

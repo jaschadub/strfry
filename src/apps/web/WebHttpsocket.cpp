@@ -1,3 +1,5 @@
+#include <queue>
+
 #include "WebServer.h"
 
 #include "app_git_version.h"
@@ -21,6 +23,11 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
     uWS::Group<uWS::SERVER> *hubGroup;
     flat_hash_map<uint64_t, Connection*> connIdToConnection;
     uint64_t nextConnectionId = 1;
+
+
+    std::vector<bool> tpReaderLock(tpReader.numThreads, false);
+    std::queue<MsgReader> pendingReaderMessages;
+
 
     {
         int extensionOptions = 0;
@@ -47,11 +54,24 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
     hubGroup->onHttpRequest([&](uWS::HttpResponse *res, uWS::HttpRequest req, char *data, size_t length, size_t remainingBytes){
         auto *c = (Connection*)res->httpSocket->getUserData();
         c->pendingRequests.insert(res);
+        res->hasHead = true;
 
         bool acceptGzip = req.getHeader("accept-encoding").toStringView().find("gzip") != std::string::npos;
 
-        res->hasHead = true;
-        tpReader.dispatch(c->connId, MsgReader{MsgReader::Request{c->connId, res, req.getUrl().toString(), acceptGzip}});
+        auto m = MsgReader{MsgReader::Request{MAX_U64, c->connId, res, req.getUrl().toString(), acceptGzip}};
+        bool didDispatch = false;
+
+        for (uint64_t i = 0; i < tpReader.numThreads; i++) {
+            if (tpReaderLock[i] == false) {
+                tpReaderLock[i] = true;
+                std::get<MsgReader::Request>(m.msg).lockedThreadId = i;
+                tpReader.dispatch(i, std::move(m));
+                didDispatch = true;
+                break;
+            }
+        }
+
+        if (!didDispatch) pendingReaderMessages.emplace(std::move(m));
     });
 
 
@@ -73,6 +93,18 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
                 c.pendingRequests.erase(msg->res);
 
                 msg->res->end(msg->payload.data(), msg->payload.size());
+
+                if (msg->lockedThreadId != MAX_U64) {
+                    if (tpReaderLock.at(msg->lockedThreadId) == false) throw herr("tried to unlock already unlocked reader lock!");
+
+                    if (pendingReaderMessages.empty()) {
+                        tpReaderLock[msg->lockedThreadId] = false;
+                    } else {
+                        std::get<MsgReader::Request>(pendingReaderMessages.front().msg).lockedThreadId = msg->lockedThreadId;
+                        tpReader.dispatch(msg->lockedThreadId, std::move(pendingReaderMessages.front()));
+                        pendingReaderMessages.pop();
+                    }
+                }
             }
         }
     };
