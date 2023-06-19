@@ -1,6 +1,7 @@
 read
   ! thread viewer screen. algos?
   export jsonl, rss
+  raw view JSON of event
   #[0] tags in message body, or nostr:npub1 tags of NIP-27
   make URLs clickable
   non-500 error pages when bech32 fails to parse, for example

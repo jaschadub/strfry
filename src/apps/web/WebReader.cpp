@@ -1,4 +1,5 @@
 #include "zlib.h"
+#include "re2/re2.h"
 
 #include "WebServer.h"
 
@@ -6,6 +7,8 @@
 #include "WebRenderUtils.h"
 #include "WebTemplates.h"
 #include "DBQuery.h"
+
+
 
 
 
@@ -222,6 +225,78 @@ struct Event {
 
 
 
+std::string preprocessContent(lmdb::txn &txn, Decompressor &decomp, const Event &ev, UserCache &userCache, std::string_view content) {
+/*
+    static RE2 urlReplacer("\\bhttps?://\\S+");
+    RE2::GlobalReplace(&content, urlReplacer, "<a href=\"\\0\">\\0</a>");
+    */
+
+    static RE2 matcher("(.*?)(https?://\\S+|#\\[\\d+\\])");
+
+    std::string output;
+
+    re2::StringPiece input(content);
+    std::string prefix, match;
+
+    while (RE2::Consume(&input, matcher, &prefix, &match)) {
+        LI << "PREFIX: " << prefix;
+        LI << "MATCH:  " << match;
+
+        output += prefix;
+
+        if (match.starts_with("http")) {
+            output += "<a href=\"";
+            output += match;
+            output += "\">";
+            output += match;
+            output += "</a>";
+        } else if (match.starts_with("#[")) {
+            bool didTransform = false;
+            auto offset = std::stoull(match.substr(2, match.size() - 3));
+
+            const auto &tags = ev.json.at("tags").get_array();
+
+            try {
+                const auto &tag = tags.at(offset).get_array();
+                LI << "ZZ: " << tags.at(offset);
+
+                if (tag.at(0) == "p") {
+                    const auto *u = userCache.getUser(txn, decomp, from_hex(tag.at(1).get_string()));
+
+                    output += "<a href=\"/u/";
+                    output += u->npubId;
+                    output += "\">";
+                    output += u->username;
+                    output += "</a>";
+                    didTransform = true;
+                }
+            } catch(std::exception &e) { LW << "ERR: " << e.what(); }
+
+            /*
+            if (tags.size() > offset) {
+                const auto &tag = tags[offset].get_array();
+
+                if (tag.size() >= 2) {
+                    if (tag[0] == "e") {
+                    } else if (tag[0] == "p") {
+                    }
+                }
+            }
+            */
+
+            LI << "DT: " << didTransform;
+            if (!didTransform) output += match;
+        }
+    }
+
+    LI << "REMAINING: " << input;
+    output += std::string_view(input.data(), input.size());
+
+    return output;
+}
+
+
+
 struct EventThread {
     std::string rootEventId;
     bool isRootEventThreadRoot;
@@ -336,6 +411,9 @@ struct EventThread {
                 ctx.eventPresent = true;
 
                 ctx.ev = &elem;
+
+                ctx.content = templarInternal::htmlEscape(ctx.content, false);
+                ctx.content = preprocessContent(txn, decomp, elem, userCache, ctx.content);
             } else {
                 ctx.eventPresent = false;
             }
