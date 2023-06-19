@@ -48,8 +48,10 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
         auto *c = (Connection*)res->httpSocket->getUserData();
         c->pendingRequests.insert(res);
 
+        bool acceptGzip = req.getHeader("accept-encoding").toStringView().find("gzip") != std::string::npos;
+
         res->hasHead = true;
-        tpReader.dispatch(c->connId, MsgReader{MsgReader::Request{c->connId, res, req.getUrl().toString()}});
+        tpReader.dispatch(c->connId, MsgReader{MsgReader::Request{c->connId, res, req.getUrl().toString(), acceptGzip}});
     });
 
 

@@ -34,6 +34,7 @@ struct MsgReader : NonCopyable {
         uint64_t connId;
         uWS::HttpResponse *res;
         std::string url;
+        bool acceptGzip;
     };
 
     using Var = std::variant<Request>;
