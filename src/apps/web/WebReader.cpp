@@ -87,6 +87,35 @@ struct User {
     void populateContactList(lmdb::txn &txn, Decompressor &decomp) {
         kind3Event = loadKindEvent(txn, decomp, 3);
     }
+
+    std::vector<std::string> getFollowers(lmdb::txn &txn, Decompressor &decomp, const std::string &pubkey) {
+        std::vector<std::string> output;
+        flat_hash_set<std::string> alreadySeen;
+
+        std::string prefix = "p";
+        prefix += pubkey;
+
+        env.generic_foreachFull(txn, env.dbi_Event__tag, prefix, "", [&](std::string_view k, std::string_view v){
+            ParsedKey_StringUint64 parsedKey(k);
+            if (parsedKey.s != prefix) return false;
+
+            auto levId = lmdb::from_sv<uint64_t>(v);
+            auto ev = lookupEventByLevId(txn, levId);
+
+            if (ev.flat_nested()->kind() == 3) {
+                auto pubkey = std::string(sv(ev.flat_nested()->pubkey()));
+
+                if (!alreadySeen.contains(pubkey)) {
+                    alreadySeen.insert(pubkey);
+                    output.emplace_back(std::move(pubkey));
+                }
+            }
+
+            return true;
+        });
+
+        return output;
+    }
 };
 
 struct UserCache {
@@ -669,6 +698,21 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
                 };
 
                 body = tmpl::user::follows(ctx);
+            } else if (u.path[2] == "followers") {
+                User user(txn, decomp, decodeBech32Simple(u.path[1]));
+                auto followers = user.getFollowers(txn, decomp, user.pubkey);
+
+                struct {
+                    const User &user;
+                    const std::vector<std::string> &followers;
+                    std::function<const User*(const std::string &)> getUser;
+                } ctx = {
+                    user,
+                    followers,
+                    [&](const std::string &pubkey){ return userCache.getUser(txn, decomp, pubkey); },
+                };
+
+                body = tmpl::user::followers(ctx);
             }
         }
     }
