@@ -1,9 +1,30 @@
 <html>
     <head>
-        <script src="http://localhost:8081/turbo.js" defer></script>
-        <link href="http://localhost:8081/web.css" rel="stylesheet">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <link href="$(ctx.staticFilesPrefix)/oddbean.css" rel="stylesheet">
+        <script src="$(ctx.staticFilesPrefix)/oddbean.js" defer></script>
+
+        <title>$(ctx.title.size() ? ctx.title + " | " : "")Oddbean</title>
     </head>
+
     <body>
-        $(ctx.body)
+        <div id="ob-header">
+            <span class="links">
+                <a href="/"><img class="logo" src="$(ctx.staticFilesPrefix)/oddbean.svg"></a>
+                <a href="/"><span class="sitename">Oddbean</span></a>
+
+                <a class="g" href="#">firehose</a> |
+                <a class="g" href="#">about</a>
+            </span>
+
+            <span class="login">
+                <a href="#">login</a>
+            </span>
+        </div>
+
+        <div id="ob-page">
+            $(ctx.body)
+        </div>
     </body>
 </html>

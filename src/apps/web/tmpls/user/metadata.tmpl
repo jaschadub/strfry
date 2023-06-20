@@ -1,41 +1,32 @@
-<div class="user">
+<div class="user-metadata">
     <div> ?(!ctx.kind0Found())
         No metadata event found for $(ctx.npubId)
     </div>
 
-    <table> ?(ctx.kind0Found())
+    <table class="horiz"> ?(ctx.kind0Found())
         <tr>
             <th>npub</th>
-            <td><pre>$(ctx.npubId)</pre></td>
+            <td>$(ctx.npubId)</td>
         </tr>
 
         <tr>
             <th>$(field)</th>
-            <td><pre>$(ctx.getMeta(field))</pre></td>
+            <td>$(ctx.getMeta(field))</td>
         </tr> @(const auto &field : { "name", "about" })
 
         <>
             <tr>
                 <th>$(field)</th>
-                <td><pre>$(ctx.getMeta(field))</pre></td>
+                <td>$(ctx.getMeta(field))</td>
             </tr> ?(field != "name" && field != "about")
         </> @(const auto &[field, v] : ctx.kind0Json->get_object())
 
     </table>
 
-    <div>
+    <div class="user-links">
         <a href="/u/$(ctx.npubId)/notes">Notes</a>
-    </div>
-
-    <div>
         <a href="/u/$(ctx.npubId)/follows">Follows</a>
-    </div>
-
-    <div>
         <a href="/u/$(ctx.npubId)/followers">Followers</a>
-    </div>
-
-    <div>
         <a href="/u/$(ctx.npubId)/export.jsonl">Export</a>
     </div>
 </div>

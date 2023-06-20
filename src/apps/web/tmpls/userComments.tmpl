@@ -1,9 +1,0 @@
-<div class="comments">
-    <div> @(const auto &c : ctx->comments)
-        <a href='/e/$(encodeBech32Simple("note", c.root))'>thread</a> ?(c.root.size())
-        <a href='/e/$(encodeBech32Simple("note", c.parent))'>parent</a> ?(c.parent.size())
-
-        <a href='/e/$(encodeBech32Simple("note", from_hex(c.json.at("id").get_string())))'>thread</a> ?(!c.root.size())
-        $(c.json.at("content").get_string())
-    </div>
-</div>

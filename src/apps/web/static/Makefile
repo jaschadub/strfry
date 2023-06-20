@@ -1,9 +1,9 @@
 CSS := reset.css oddbean.css
 JS  := turbo.js oddbean.js
 
-.PHONY: all css js
+.PHONY: all css js logo
 
-all: css js
+all: css js logo
 
 css: $(CSS)
 	mkdir -p build/
@@ -14,3 +14,6 @@ js: $(JS)
 	mkdir -p build/
 	cat $(JS) | esbuild --minify > build/oddbean.js
 	gzip -k9f build/oddbean.js
+
+logo:
+	cp oddbean.svg build/

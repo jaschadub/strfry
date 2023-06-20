@@ -293,7 +293,9 @@ std::string preprocessContent(lmdb::txn &txn, Decompressor &decomp, const Event 
                     appendLink(std::string("/e/") + encodeBech32Simple("note", from_hex(tag.at(1).get_string())), sv(match));
                     didTransform = true;
                 }
-            } catch(std::exception &e) { LW << "ERR: " << e.what(); }
+            } catch(std::exception &e) {
+                //LW << "tag parse error: " << e.what();
+            }
 
             if (!didTransform) output += sv(match);
         }
@@ -725,8 +727,12 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
     if (body) {
         struct {
             TemplarResult body;
+            std::string title;
+            std::string staticFilesPrefix;
         } ctx = {
             *body,
+            "",
+            "http://127.0.0.1:8081",
         };
 
         responseData = std::move(tmpl::main(ctx).str);
