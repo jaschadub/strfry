@@ -1,5 +1,3 @@
-/* CSS Reset */
-
 html, body, div, span, applet, object, iframe,
 h1, h2, h3, h4, h5, h6, p, blockquote, pre,
 a, abbr, acronym, address, big, cite, code,
@@ -42,51 +40,4 @@ q:before, q:after {
 table {
     border-collapse: collapse;
     border-spacing: 0;
-}
-
-
-/*********************/
-
-
-/* general */
-
-body {
-    font-family: sans-serif;
-}
-
-pre {
-    white-space: pre-line;
-}
-
-
-/* user comments */
-
-.user-comments > div {
-    margin-bottom: 30px;
-    border-bottom: 1px solid black;
-}
-
-
-/* event */
-
-.event {
-    margin-bottom: 20px;
-}
-
-.abbrev {
-}
-
-.header {
-    font-weight: bold
-}
-
-.content {
-    margin-top: 10px;
-    padding-left: 10px;
-}
-
-.replies {
-    margin-top: 20px;
-    padding-left: 20px;
-    border-left: 1px dotted black;
 }

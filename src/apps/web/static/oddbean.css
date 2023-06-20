@@ -1,0 +1,42 @@
+/* general */
+
+body {
+    font-family: sans-serif;
+}
+
+pre {
+    white-space: pre-line;
+}
+
+
+/* user comments */
+
+.user-comments > div {
+    margin-bottom: 30px;
+    border-bottom: 1px solid black;
+}
+
+
+/* event */
+
+.event {
+    margin-bottom: 20px;
+}
+
+.abbrev {
+}
+
+.header {
+    font-weight: bold
+}
+
+.content {
+    margin-top: 10px;
+    padding-left: 10px;
+}
+
+.replies {
+    margin-top: 20px;
+    padding-left: 20px;
+    border-left: 1px dotted black;
+}
