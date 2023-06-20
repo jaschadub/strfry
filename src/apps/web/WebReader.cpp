@@ -226,70 +226,50 @@ struct Event {
 
 
 std::string preprocessContent(lmdb::txn &txn, Decompressor &decomp, const Event &ev, UserCache &userCache, std::string_view content) {
-/*
-    static RE2 urlReplacer("\\bhttps?://\\S+");
-    RE2::GlobalReplace(&content, urlReplacer, "<a href=\"\\0\">\\0</a>");
-    */
-
-    static RE2 matcher("(.*?)(https?://\\S+|#\\[\\d+\\])");
+    static RE2 matcher(R"((?is)(.*?)(https?://\S+|#\[\d+\]))");
 
     std::string output;
 
     re2::StringPiece input(content);
-    std::string prefix, match;
+    re2::StringPiece prefix, match;
+
+    auto sv = [](re2::StringPiece s){ return std::string_view(s.data(), s.size()); };
+    auto appendLink = [&](std::string_view url, std::string_view text){
+        output += "<a href=\"";
+        output += url;
+        output += "\">";
+        output += text;
+        output += "</a>";
+    };
 
     while (RE2::Consume(&input, matcher, &prefix, &match)) {
-        LI << "PREFIX: " << prefix;
-        LI << "MATCH:  " << match;
-
-        output += prefix;
+        output += sv(prefix);
 
         if (match.starts_with("http")) {
-            output += "<a href=\"";
-            output += match;
-            output += "\">";
-            output += match;
-            output += "</a>";
+            appendLink(sv(match), sv(match));
         } else if (match.starts_with("#[")) {
             bool didTransform = false;
-            auto offset = std::stoull(match.substr(2, match.size() - 3));
+            auto offset = std::stoull(std::string(sv(match)).substr(2, match.size() - 3));
 
             const auto &tags = ev.json.at("tags").get_array();
 
             try {
                 const auto &tag = tags.at(offset).get_array();
-                LI << "ZZ: " << tags.at(offset);
 
                 if (tag.at(0) == "p") {
                     const auto *u = userCache.getUser(txn, decomp, from_hex(tag.at(1).get_string()));
-
-                    output += "<a href=\"/u/";
-                    output += u->npubId;
-                    output += "\">";
-                    output += u->username;
-                    output += "</a>";
+                    appendLink(std::string("/u/") + u->npubId, u->username);
+                    didTransform = true;
+                } else if (tag.at(0) == "e") {
+                    appendLink(std::string("/e/") + encodeBech32Simple("note", from_hex(tag.at(1).get_string())), sv(match));
                     didTransform = true;
                 }
             } catch(std::exception &e) { LW << "ERR: " << e.what(); }
 
-            /*
-            if (tags.size() > offset) {
-                const auto &tag = tags[offset].get_array();
-
-                if (tag.size() >= 2) {
-                    if (tag[0] == "e") {
-                    } else if (tag[0] == "p") {
-                    }
-                }
-            }
-            */
-
-            LI << "DT: " << didTransform;
-            if (!didTransform) output += match;
+            if (!didTransform) output += sv(match);
         }
     }
 
-    LI << "REMAINING: " << input;
     output += std::string_view(input.data(), input.size());
 
     return output;
