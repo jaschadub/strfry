@@ -5,7 +5,7 @@
         <link href="$(ctx.staticFilesPrefix)/oddbean.css" rel="stylesheet">
         <script src="$(ctx.staticFilesPrefix)/oddbean.js" defer></script>
 
-        <title>$(ctx.title.size() ? ctx.title + " | " : "")Oddbean</title>
+        <title>$(ctx.title)Oddbean</title>
     </head>
 
     <body>
@@ -25,6 +25,10 @@
 
         <div id="ob-page">
             $(ctx.body)
+        </div>
+
+        <div id="ob-footer">
+            Oddbean
         </div>
     </body>
 </html>

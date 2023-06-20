@@ -314,6 +314,7 @@ struct EventThread {
     flat_hash_map<std::string, Event> eventCache;
 
     flat_hash_map<std::string, flat_hash_set<std::string>> children; // parentEventId -> childEventIds
+    std::string pubkeyHighlight;//FIXME
 
 
     // Load all events under an eventId
@@ -665,9 +666,11 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
     UserCache userCache;
 
     std::optional<std::string> rawBody;
-    std::optional<TemplarResult> body;
+
     std::string_view code = "200 OK";
     std::string_view contentType = "text/html; charset=utf-8";
+    std::optional<TemplarResult> body;
+    std::string title;
 
     if (u.path.size() == 0) {
         body = TemplarResult{ "root" };
@@ -679,6 +682,7 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
     } else if (u.path[0] == "u") {
         if (u.path.size() == 2) {
             User user(txn, decomp, decodeBech32Simple(u.path[1]));
+            title = std::string("profile: ") + user.username;
             body = tmpl::user::metadata(user);
         } else if (u.path.size() == 3) {
             if (u.path[2] == "notes") {
@@ -725,13 +729,15 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
     std::string responseData;
 
     if (body) {
+        if (title.size()) title += " | ";
+
         struct {
             TemplarResult body;
-            std::string title;
+            std::string_view title;
             std::string staticFilesPrefix;
         } ctx = {
             *body,
-            "",
+            title,
             "http://127.0.0.1:8081",
         };
 
