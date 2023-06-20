@@ -5,12 +5,12 @@ read
   non-500 error pages when bech32 fails to parse, for example
 
   search field: enter anything, pubkey (hex or npub), eventId, etc. maybe even full-text search?
-  smarter truncation/abbrev (try to cut at a sentence, or word boundary, don't cut URLs)
   make nostr:note1... refs clickable
   ? pagination on user comments screen
   rss
 
 styling
+  smarter truncation/abbrev (try to cut at a sentence, or word boundary, don't cut URLs)
   abbrev comments should be smaller? non-pre tag?
   on user comments screen, highlight user's name in green or something to call attention to their comments
 

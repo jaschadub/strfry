@@ -71,7 +71,8 @@ pre {
 }
 
 #ob-page {
-    margin-top: 10px;
+    padding: 10px 10px 10px 10px;
+    background-color: #f6f6ef;
 }
 
 /*
@@ -92,8 +93,12 @@ table {
         background-color: black;
     }
 
+    tr:nth-child(odd) {
+        background-color: #fefefe;
+    }
+
     tr:nth-child(even) {
-        background-color: #f2f2f2;
+        background-color: #f6f6ef;
     }
 
     td,th {
@@ -154,22 +159,21 @@ table.vert {
 
 .event {
     margin-bottom: 20px;
-}
 
-.abbrev {
-}
+    .abbrev {
+    }
 
-.header {
-    font-weight: bold
-}
+    .header {
+    }
 
-.content {
-    margin-top: 10px;
-    padding-left: 10px;
-}
+    .content {
+        margin-top: 10px;
+        padding-left: 10px;
+    }
 
-.replies {
-    margin-top: 20px;
-    padding-left: 20px;
-    border-left: 1px dotted black;
+    .replies {
+        margin-top: 20px;
+        padding-left: 20px;
+        border-left: 1px dotted black;
+    }
 }

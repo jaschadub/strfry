@@ -687,7 +687,7 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
             } else if (u.path[2] == "export.jsonl") {
                 rawBody = exportUserEvents(txn, decomp, decodeBech32Simple(u.path[1]));
                 contentType = "application/json; charset=utf-8";
-            } else if (u.path[2] == "follows") {
+            } else if (u.path[2] == "following") {
                 User user(txn, decomp, decodeBech32Simple(u.path[1]));
                 user.populateContactList(txn, decomp);
 
@@ -699,7 +699,7 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
                     [&](const std::string &pubkey){ return userCache.getUser(txn, decomp, pubkey); },
                 };
 
-                body = tmpl::user::follows(ctx);
+                body = tmpl::user::following(ctx);
             } else if (u.path[2] == "followers") {
                 User user(txn, decomp, decodeBech32Simple(u.path[1]));
                 auto followers = user.getFollowers(txn, decomp, user.pubkey);
