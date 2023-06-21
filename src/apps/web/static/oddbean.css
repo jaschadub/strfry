@@ -141,7 +141,8 @@ table.vert {
         margin-top: 10px;
 
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
+        justify-content: space-evenly;
 
         > a {
             margin: 3px;

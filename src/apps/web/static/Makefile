@@ -1,5 +1,5 @@
 CSS := reset.css oddbean.css
-JS  := turbo.js oddbean.js
+JS  := turbo.js oddbean.js alpine.js
 
 .PHONY: all css js logo
 

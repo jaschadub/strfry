@@ -3,7 +3,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
         <link href="$(ctx.staticFilesPrefix)/oddbean.css" rel="stylesheet">
-        <script src="$(ctx.staticFilesPrefix)/oddbean.js" defer></script>
+        <script defer src="$(ctx.staticFilesPrefix)/oddbean.js"></script>
 
         <title>$(ctx.title)Oddbean</title>
     </head>
@@ -18,8 +18,12 @@
                 <a class="g" href="#">about</a>
             </span>
 
-            <span class="login">
-                <a href="#">login</a>
+            <span x-data="obLogin" class="login">
+                <span x-show="!loggedIn" @click="login" class="login-link">login</span>
+                <span x-show="loggedIn">
+                    <span x-text="username" class="username"></span>
+                    <span @click="logout" class="logout-link">logout</span>
+                </span>
             </span>
         </div>
 

@@ -731,6 +731,10 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
                 body = uc.render(txn, decomp);
             } else if (u.path[2] == "export.jsonl") {
                 rawBody = exportUserEvents(txn, decomp, decodeBech32Simple(u.path[1]));
+                contentType = "application/jsonl+json; charset=utf-8";
+            } else if (u.path[2] == "metadata.json") {
+                User user(txn, decomp, from_hex(u.path[1]));
+                rawBody = user.kind0Found() ? tao::json::to_string(*user.kind0Json) : "{}";
                 contentType = "application/json; charset=utf-8";
             } else if (u.path[2] == "following") {
                 User user(txn, decomp, decodeBech32Simple(u.path[1]));
