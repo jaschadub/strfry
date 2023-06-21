@@ -254,12 +254,13 @@ struct Event {
 
 
 
-std::string preprocessContent(lmdb::txn &txn, Decompressor &decomp, const Event &ev, UserCache &userCache, std::string_view content) {
+void preprocessContent(lmdb::txn &txn, Decompressor &decomp, const Event &ev, UserCache &userCache, std::string &content) {
     static RE2 matcher(R"((?is)(.*?)(https?://\S+|#\[\d+\]))");
 
     std::string output;
 
-    re2::StringPiece input(content);
+    std::string_view contentSv(content);
+    re2::StringPiece input(contentSv);
     re2::StringPiece prefix, match;
 
     auto sv = [](re2::StringPiece s){ return std::string_view(s.data(), s.size()); };
@@ -301,9 +302,10 @@ std::string preprocessContent(lmdb::txn &txn, Decompressor &decomp, const Event 
         }
     }
 
-    output += std::string_view(input.data(), input.size());
-
-    return output;
+    if (output.size()) {
+        output += std::string_view(input.data(), input.size());
+        std::swap(output, content);
+    }
 }
 
 
@@ -427,7 +429,7 @@ struct EventThread {
                 ctx.ev = &elem;
 
                 ctx.content = templarInternal::htmlEscape(ctx.content, false);
-                ctx.content = preprocessContent(txn, decomp, elem, userCache, ctx.content);
+                preprocessContent(txn, decomp, elem, userCache, ctx.content);
             } else {
                 ctx.eventPresent = false;
             }
