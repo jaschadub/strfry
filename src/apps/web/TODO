@@ -5,6 +5,8 @@ read
   ! non-500 error pages when bech32 fails to parse, for example
   ! search field: enter anything, pubkey (hex or npub), eventId, etc. maybe even full-text search?
   ! rss
+  ! click on up/down vote counts to see who voted
+  ! "show full thread" shouldn't appear on root item in thread-view
   ? make nostr:note1... refs clickable
   ? pagination on user comments screen
 

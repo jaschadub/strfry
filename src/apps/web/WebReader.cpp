@@ -588,6 +588,41 @@ std::string exportUserEvents(lmdb::txn &txn, Decompressor &decomp, std::string_v
 
 
 
+void doSearch(lmdb::txn &txn, Decompressor &decomp, std::string_view search, std::vector<TemplarResult> &results) {
+    auto doesPubkeyExist = [&](std::string_view pubkey){
+        bool ret = false;
+
+        env.generic_foreachFull(txn, env.dbi_Event__pubkey, makeKey_StringUint64(pubkey, 0), "", [&](std::string_view k, std::string_view v){
+            ParsedKey_StringUint64 parsedKey(k);
+
+            if (parsedKey.s == pubkey) ret = true;
+
+            return false;
+        });
+
+        return ret;
+    };
+
+    if (search.size() == 64) {
+        try {
+            auto word = from_hex(search);
+            if (doesPubkeyExist(word)) results.emplace_back(tmpl::search::userResult(User(txn, decomp, word)));
+        } catch(...) {}
+    }
+
+    if (search.starts_with("npub1")) {
+        try {
+            auto word = decodeBech32Simple(search);
+            if (doesPubkeyExist(word)) results.emplace_back(tmpl::search::userResult(User(txn, decomp, word)));
+        } catch(...) {}
+    }
+
+    try {
+        auto e = Event::fromIdExternal(txn, search);
+        results.emplace_back(tmpl::search::eventResult(e));
+    } catch(...) {}
+}
+
 
 
 
@@ -728,6 +763,24 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
 
                 body = tmpl::user::followers(ctx);
             }
+        }
+    } else if (u.path[0] == "search") {
+        std::vector<TemplarResult> results;
+
+        if (u.query.starts_with("q=")) {
+            std::string_view search = u.query.substr(2);
+
+            doSearch(txn, decomp, search, results);
+
+            struct {
+                std::string_view search;
+                const std::vector<TemplarResult> &results;
+            } ctx = {
+                search,
+                results,
+            };
+
+            body = tmpl::searchPage(ctx);
         }
     }
 
