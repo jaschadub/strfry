@@ -4,7 +4,7 @@
 #include "WebServer.h"
 
 #include "Bech32Utils.h"
-#include "WebRenderUtils.h"
+#include "WebUtils.h"
 #include "WebTemplates.h"
 #include "DBQuery.h"
 
@@ -628,80 +628,15 @@ void doSearch(lmdb::txn &txn, Decompressor &decomp, std::string_view search, std
 
 
 
-void WebServer::reply(const MsgReader::Request *msg, std::string_view body, std::string_view status, std::string_view contentType) {
-    bool didCompress = false;
-    std::string compressed;
-
-    if (body.size() > 512 && msg->acceptGzip) {
-        compressed.resize(body.size());
-
-        z_stream zs;
-        zs.zalloc = Z_NULL;
-        zs.zfree = Z_NULL;
-        zs.opaque = Z_NULL;
-        zs.avail_in = body.size();
-        zs.next_in = (Bytef*)body.data();
-        zs.avail_out = compressed.size();
-        zs.next_out = (Bytef*)compressed.data();
-
-        deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY);
-        auto ret1 = deflate(&zs, Z_FINISH);
-        auto ret2 = deflateEnd(&zs);
-
-        if (ret1 == Z_STREAM_END && ret2 == Z_OK) {
-            compressed.resize(zs.total_out);
-            didCompress = true;
-            body = compressed;
-        } else {
-            compressed = "";
-        }
-    }
-
-    std::string payload;
-    payload.reserve(body.size() + 1024);
-
-    payload += "HTTP/1.0 ";
-    payload += status;
-    payload += "\r\nContent-Length: ";
-    payload += std::to_string(body.size());
-    payload += "\r\nContent-Type: ";
-    payload += contentType;
-    payload += "\r\n";
-    if (didCompress) payload += "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n";
-    payload += "Connection: Keep-Alive\r\n\r\n";
-    payload += body;
-
-    tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{msg->lockedThreadId, msg->connId, msg->res, std::move(payload)}});
-    hubTrigger->send();
-}
 
 
-struct Url {
-    std::vector<std::string_view> path;
-    std::string_view query;
 
-    Url(std::string_view u) {
-        size_t pos;
-
-        if ((pos = u.find("?")) != std::string::npos) {
-            query = u.substr(pos + 1);
-            u = u.substr(0, pos);
-        }
-
-        while ((pos = u.find("/")) != std::string::npos) {
-            if (pos != 0) path.emplace_back(u.substr(0, pos));
-            u = u.substr(pos + 1);
-        }
-
-        if (u.size()) path.emplace_back(u);
-    }
-};
-
-void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg) {
-    LI << "GOT REQUEST FOR " << msg->url;
+void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg) {
     auto startTime = hoytech::curr_time_us();
+    const auto &req = msg->req;
+    Url u(req.url);
 
-    Url u(msg->url);
+    LI << "READ REQUEST: " << req.url;
 
     UserCache userCache;
 
@@ -812,12 +747,12 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
     } else if (rawBody) {
         responseData = std::move(*rawBody);
     } else {
-        body = TemplarResult{ "Not found" };
         code = "404 Not Found";
+        body = TemplarResult{ "Not found" };
     }
 
     LI << "Reply: " << code << " / " << responseData.size() << " bytes in " << (hoytech::curr_time_us() - startTime) << "us";
-    reply(msg, responseData, code, contentType);
+    sendHttpResponseAndUnlock(msg->lockedThreadId, req, responseData, code, contentType);
 }
 
 
@@ -833,9 +768,9 @@ void WebServer::runReader(ThreadPool<MsgReader>::Thread &thr) {
         for (auto &newMsg : newMsgs) {
             if (auto msg = std::get_if<MsgReader::Request>(&newMsg.msg)) {
                 try {
-                    handleRequest(txn, decomp, msg);
+                    handleReadRequest(txn, decomp, msg);
                 } catch (std::exception &e) {
-                    reply(msg, "Server error", "500 Server Error");
+                    sendHttpResponseAndUnlock(msg->lockedThreadId, msg->req, "Server error", "500 Server Error");
                     LE << "500 server error: " << e.what();
                 }
             }

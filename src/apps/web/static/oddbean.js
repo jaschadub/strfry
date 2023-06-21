@@ -41,7 +41,7 @@ document.addEventListener('alpine:init', () => {
 
         async submit() {
             let ev = {
-                created_at: (new Date()) - 0,
+                created_at: Math.floor(((new Date()) - 0) / 1000),
                 kind: 0,
                 tags: [],
                 content: this.$refs.post.value,
@@ -49,7 +49,14 @@ document.addEventListener('alpine:init', () => {
 
             ev = await window.nostr.signEvent(ev);
 
-            console.log(ev);
+            let resp = await fetch("/submit-post", {
+              method: "post",
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(ev),
+            });
         },
     }))
 });

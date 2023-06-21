@@ -3,7 +3,28 @@
 #include <string>
 
 
-std::string renderTimestamp(uint64_t now, uint64_t ts) {
+struct Url {
+    std::vector<std::string_view> path;
+    std::string_view query;
+
+    Url(std::string_view u) {
+        size_t pos;
+
+        if ((pos = u.find("?")) != std::string::npos) {
+            query = u.substr(pos + 1);
+            u = u.substr(0, pos);
+        }
+
+        while ((pos = u.find("/")) != std::string::npos) {
+            if (pos != 0) path.emplace_back(u.substr(0, pos));
+            u = u.substr(pos + 1);
+        }
+
+        if (u.size()) path.emplace_back(u);
+    }
+};
+
+inline std::string renderTimestamp(uint64_t now, uint64_t ts) {
     uint64_t delta = now > ts ? now - ts : ts - now;
 
     const uint64_t A = 60;

@@ -17,12 +17,46 @@
 
 
 
+struct HTTPReq : NonCopyable {
+    uint64_t connId;
+    uWS::HttpResponse *res;
+
+    std::string url;
+    uWS::HttpMethod method = uWS::HttpMethod::METHOD_INVALID;
+    bool acceptGzip = false;
+
+    std::string body;
+
+    HTTPReq(uint64_t connId, uWS::HttpResponse *res, uWS::HttpRequest req) : connId(connId), res(res) {
+        res->hasHead = true; // We'll be sending our own headers
+
+        method = req.getMethod();
+        url = req.getUrl().toString();
+        acceptGzip = req.getHeader("accept-encoding").toStringView().find("gzip") != std::string::npos;
+    }
+};
+
+struct Connection : NonCopyable {
+    uWS::HttpSocket<uWS::SERVER> *httpsocket;
+    uint64_t connId;
+    uint64_t connectedTimestamp;
+    flat_hash_set<uWS::HttpResponse *> pendingRequests;
+
+    Connection(uWS::HttpSocket<uWS::SERVER> *hs, uint64_t connId_)
+        : httpsocket(hs), connId(connId_), connectedTimestamp(hoytech::curr_time_us()) { }
+    Connection(const Connection &) = delete;
+    Connection(Connection &&) = delete;
+};
+
+
+
+
 struct MsgHttpsocket : NonCopyable {
     struct Send {
-        uint64_t lockedThreadId;
         uint64_t connId;
         uWS::HttpResponse *res;
         std::string payload;
+        uint64_t lockedThreadId;
     };
 
     using Var = std::variant<Send>;
@@ -32,11 +66,8 @@ struct MsgHttpsocket : NonCopyable {
 
 struct MsgReader : NonCopyable {
     struct Request {
+        HTTPReq req;
         uint64_t lockedThreadId;
-        uint64_t connId;
-        uWS::HttpResponse *res;
-        std::string url;
-        bool acceptGzip;
     };
 
     using Var = std::variant<Request>;
@@ -44,6 +75,15 @@ struct MsgReader : NonCopyable {
     MsgReader(Var &&msg_) : msg(std::move(msg_)) {}
 };
 
+struct MsgWriter : NonCopyable {
+    struct Request {
+        HTTPReq req;
+    };
+
+    using Var = std::variant<Request>;
+    Var msg;
+    MsgWriter(Var &&msg_) : msg(std::move(msg_)) {}
+};
 
 
 struct WebServer {
@@ -53,12 +93,24 @@ struct WebServer {
 
     ThreadPool<MsgHttpsocket> tpHttpsocket;
     ThreadPool<MsgReader> tpReader;
+    ThreadPool<MsgWriter> tpWriter;
 
     void run();
 
     void runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr);
+    void dispatchPostRequest();
 
     void runReader(ThreadPool<MsgReader>::Thread &thr);
-    void reply(const MsgReader::Request *msg, std::string_view r, std::string_view status = "200 OK", std::string_view contentType = "text/html; charset=utf-8");
-    void handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg);
+    void handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg);
+
+    void runWriter(ThreadPool<MsgWriter>::Thread &thr);
+    void handleWriteRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWriter::Request *msg);
+
+    // Utils
+
+    void sendHttpResponseAndUnlock(uint64_t lockedThreadId, const HTTPReq &req, std::string_view body, std::string_view status = "200 OK", std::string_view contentType = "text/html; charset=utf-8");
+
+    void sendHttpResponse(const HTTPReq &req, std::string_view body, std::string_view status = "200 OK", std::string_view contentType = "text/html; charset=utf-8") {
+        sendHttpResponseAndUnlock(MAX_U64, req, body, status, contentType);
+    }
 };

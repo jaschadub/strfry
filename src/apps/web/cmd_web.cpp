@@ -12,10 +12,17 @@ void WebServer::run() {
         runHttpsocket(thr);
     });
 
-    // FIXME: cfg().web__numThreads__ingester
+
+    // FIXME: cfg().web__numThreads__*
+
     tpReader.init("Reader", 3, [this](auto &thr){
         runReader(thr);
     });
+
+    tpWriter.init("Writer", 1, [this](auto &thr){
+        runWriter(thr);
+    });
+
 
     // Monitor for config file reloads
 

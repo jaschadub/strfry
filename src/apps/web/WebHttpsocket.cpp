@@ -7,23 +7,12 @@
 
 
 void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
-    struct Connection {
-        uWS::HttpSocket<uWS::SERVER> *httpsocket;
-        uint64_t connId;
-        uint64_t connectedTimestamp;
-        flat_hash_set<uWS::HttpResponse *> pendingRequests;
-
-        Connection(uWS::HttpSocket<uWS::SERVER> *hs, uint64_t connId_)
-            : httpsocket(hs), connId(connId_), connectedTimestamp(hoytech::curr_time_us()) { }
-        Connection(const Connection &) = delete;
-        Connection(Connection &&) = delete;
-    };
-
     uWS::Hub hub;
     uWS::Group<uWS::SERVER> *hubGroup;
     flat_hash_map<uint64_t, Connection*> connIdToConnection;
     uint64_t nextConnectionId = 1;
 
+    flat_hash_map<uWS::HttpResponse *, HTTPReq> receivingRequests;
 
     std::vector<bool> tpReaderLock(tpReader.numThreads, false);
     std::queue<MsgReader> pendingReaderMessages;
@@ -51,27 +40,50 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
         delete c;
     });
 
-    hubGroup->onHttpRequest([&](uWS::HttpResponse *res, uWS::HttpRequest req, char *data, size_t length, size_t remainingBytes){
+    hubGroup->onHttpRequest([&](uWS::HttpResponse *res, uWS::HttpRequest reqRaw, char *data, size_t length, size_t remainingBytes){
         auto *c = (Connection*)res->httpSocket->getUserData();
+
+        HTTPReq req(c->connId, res, reqRaw);
+        req.body = std::string(data, length);
+
         c->pendingRequests.insert(res);
-        res->hasHead = true;
 
-        bool acceptGzip = req.getHeader("accept-encoding").toStringView().find("gzip") != std::string::npos;
+        if (req.method == uWS::HttpMethod::METHOD_GET) {
+            auto m = MsgReader{MsgReader::Request{std::move(req), MAX_U64}};
+            bool didDispatch = false;
 
-        auto m = MsgReader{MsgReader::Request{MAX_U64, c->connId, res, req.getUrl().toString(), acceptGzip}};
-        bool didDispatch = false;
-
-        for (uint64_t i = 0; i < tpReader.numThreads; i++) {
-            if (tpReaderLock[i] == false) {
-                tpReaderLock[i] = true;
-                std::get<MsgReader::Request>(m.msg).lockedThreadId = i;
-                tpReader.dispatch(i, std::move(m));
-                didDispatch = true;
-                break;
+            for (uint64_t i = 0; i < tpReader.numThreads; i++) {
+                if (tpReaderLock[i] == false) {
+                    tpReaderLock[i] = true;
+                    std::get<MsgReader::Request>(m.msg).lockedThreadId = i;
+                    tpReader.dispatch(i, std::move(m));
+                    didDispatch = true;
+                    break;
+                }
             }
-        }
 
-        if (!didDispatch) pendingReaderMessages.emplace(std::move(m));
+            if (!didDispatch) pendingReaderMessages.emplace(std::move(m));
+        } else if (req.method == uWS::HttpMethod::METHOD_POST) {
+            if (remainingBytes) {
+                receivingRequests.emplace(res, std::move(req));
+            } else {
+                tpWriter.dispatch(0, MsgWriter{MsgWriter::Request{std::move(req)}});
+            }
+        } else {
+            sendHttpResponse(req, "Method Not Allowed", "405 Method Not Allowed");
+        }
+    });
+
+    hubGroup->onHttpData([&](uWS::HttpResponse *res, char *data, size_t length, size_t remainingBytes){
+        auto &req = receivingRequests.at(res);
+
+        req.body += std::string_view(data, length);
+
+        if (remainingBytes) {
+            auto m = MsgWriter{MsgWriter::Request{std::move(req)}};
+            receivingRequests.erase(res);
+            tpWriter.dispatch(0, std::move(m));
+        }
     });
 
 
