@@ -786,6 +786,8 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
 
             body = tmpl::searchPage(ctx);
         }
+    } else if (u.path[0] == "post") {
+        body = tmpl::newPost(nullptr);
     }
 
 

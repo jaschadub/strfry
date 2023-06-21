@@ -6,11 +6,12 @@ read
   ! search field: enter anything, pubkey (hex or npub), eventId, etc. maybe even full-text search?
   ! rss
   ! click on up/down vote counts to see who voted
-  ! "show full thread" shouldn't appear on root item in thread-view
   ? make nostr:note1... refs clickable
   ? pagination on user comments screen
 
 styling
+  ! "show full thread" shouldn't appear on root item in thread-view
+  ! make URLs in user profiles clickable
   ? smarter truncation/abbrev (try to cut at a sentence, or word boundary, don't cut URLs)
   ? abbrev comments should be smaller? non-pre tag?
 
