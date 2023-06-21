@@ -1,5 +1,5 @@
 CSS := reset.css oddbean.css
-JS  := turbo.js oddbean.js alpine.js
+JS  := base.ts turbo.js oddbean.js alpine.js
 
 .PHONY: all css js logo
 
@@ -12,7 +12,7 @@ css: $(CSS)
 
 js: $(JS)
 	mkdir -p build/
-	cat $(JS) | esbuild --minify > build/oddbean.js
+	cat $(JS) | esbuild --loader=ts --minify > build/oddbean.js
 	gzip -k9f build/oddbean.js
 
 logo:

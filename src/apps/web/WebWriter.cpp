@@ -33,7 +33,7 @@ void WebServer::runWriter(ThreadPool<MsgWebWriter>::Thread &thr) {
                     tao::json::value json = tao::json::from_string(req.body);
                     parseAndVerifyEvent(json, secpCtx, true, true, flatStr, jsonStr);
                 } catch(std::exception &e) {
-                    sendHttpResponse(req, tao::json::to_string(tao::json::value({{ "err", e.what() }})), "404 Not Found", "application/json; charset=utf-8");
+                    sendHttpResponse(req, tao::json::to_string(tao::json::value({{ "message", e.what() }})), "404 Not Found", "application/json; charset=utf-8");
                     continue;
                 }
 
@@ -53,7 +53,7 @@ void WebServer::runWriter(ThreadPool<MsgWebWriter>::Thread &thr) {
                 message += e.what();
 
                 HTTPReq &req = *static_cast<HTTPReq*>(newEvent.userData);
-                sendHttpResponse(req, tao::json::to_string(tao::json::value({{ "err", message }})), "500 Server Error", "application/json; charset=utf-8");
+                sendHttpResponse(req, tao::json::to_string(tao::json::value({{ "message", message }})), "500 Server Error", "application/json; charset=utf-8");
             }
 
             continue;

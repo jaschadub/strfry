@@ -9,13 +9,9 @@ body {
     margin-right: auto;
 }
 
-a:link {
+a:link, a:visited {
     text-decoration: none;
     color: green;
-}
-
-a:visited {
-    color: unset;
 }
 
 a:hover {
@@ -70,7 +66,7 @@ h2 {
         margin-right: 5px;
     }
 
-    a:link {
+    a:link, a:visited {
         color: black;
     }
 }
@@ -183,5 +179,20 @@ table.vert {
         margin-top: 20px;
         padding-left: 20px;
         border-left: 1px dotted black;
+    }
+}
+
+
+/* new post */
+
+.new-post {
+    .submit-button {
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
+
+    .result-message {
+        color: red;
+        text-weight: bold;
     }
 }

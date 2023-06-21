@@ -1,3 +1,13 @@
+const bech32Ctx = genBech32('bech32');
+
+function encodeBech32(prefix, inp) {
+    return bech32Ctx.encode(prefix, bech32Ctx.toWords(base16.decode(inp.toUpperCase())));
+}
+
+function decodeBech32(inp) {
+    return base16.encode(bech32Ctx.fromWords(bech32Ctx.decode(inp).words)).toLowerCase();
+}
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('obLogin', () => ({
         loggedIn: false,
@@ -29,7 +39,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         myProfile() {
-            return `/u/${this.pubkey}`;
+            return `/u/${encodeBech32('npub', this.pubkey)}`;
         },
 
         logout() {
@@ -44,6 +54,8 @@ document.addEventListener('alpine:init', () => {
         },
 
         async submit() {
+            this.$refs.msg.innerText = '';
+
             let ev = {
                 created_at: Math.floor(((new Date()) - 0) / 1000),
                 kind: 1,
@@ -64,7 +76,28 @@ document.addEventListener('alpine:init', () => {
 
             let json = await resp.json();
 
-            console.log("result", json);
+            if (json.message === 'ok' && json.written === true) {
+                window.location = `/e/${json.event}`
+            } else {
+                this.$refs.msg.innerText = `Sending note failed: ${json.message}`;
+                console.error(json);
+            }
         },
     }))
+});
+
+
+document.addEventListener("click", async (e) => {
+    let parent = e.target.closest(".do-vote");
+    if (!parent) return;
+
+    let which = e.target.className;
+    if (which.length !== 1) return;
+
+    let note = parent.getAttribute('data-note');
+
+    console.log({which,note});
+
+    e.target.className = 'loading';
+    e.target.innerText = '↻';
 });
