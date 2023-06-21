@@ -314,7 +314,7 @@ struct EventThread {
     flat_hash_map<std::string, Event> eventCache;
 
     flat_hash_map<std::string, flat_hash_set<std::string>> children; // parentEventId -> childEventIds
-    std::string pubkeyHighlight;//FIXME
+    std::string pubkeyHighlight;
 
 
     // Load all events under an eventId
@@ -403,6 +403,7 @@ struct EventThread {
             const User *user = nullptr;
             bool eventPresent = true;
             bool abbrev = false;
+            bool highlight = false;
             std::vector<Reply> replies;
         };
 
@@ -421,6 +422,7 @@ struct EventThread {
                 ctx.timestamp = renderTimestamp(now, elem.getCreatedAt());
                 ctx.user = userCache.getUser(txn, decomp, elem.getPubkey());
                 ctx.eventPresent = true;
+                ctx.highlight = (pubkey == pubkeyHighlight);
 
                 ctx.ev = &elem;
 
@@ -546,6 +548,7 @@ struct UserEvents {
 
         for (auto &cluster : eventClusterArr) {
             EventThread eventThread(cluster.rootEventId, cluster.isRootEventFromUser, std::move(cluster.eventCache));
+            eventThread.pubkeyHighlight = u.pubkey;
             renderedThreads.emplace_back(eventThread.render(txn, decomp, userCache, u.pubkey));
         }
 
@@ -687,12 +690,14 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
         } else if (u.path.size() == 3) {
             if (u.path[2] == "notes") {
                 UserEvents uc(txn, decomp, decodeBech32Simple(u.path[1]));
+                title = std::string("notes: ") + uc.u.username;
                 body = uc.render(txn, decomp);
             } else if (u.path[2] == "export.jsonl") {
                 rawBody = exportUserEvents(txn, decomp, decodeBech32Simple(u.path[1]));
                 contentType = "application/json; charset=utf-8";
             } else if (u.path[2] == "following") {
                 User user(txn, decomp, decodeBech32Simple(u.path[1]));
+                title = std::string("following: ") + user.username;
                 user.populateContactList(txn, decomp);
 
                 struct {
@@ -706,6 +711,7 @@ void WebServer::handleRequest(lmdb::txn &txn, Decompressor &decomp, const MsgRea
                 body = tmpl::user::following(ctx);
             } else if (u.path[2] == "followers") {
                 User user(txn, decomp, decodeBech32Simple(u.path[1]));
+                title = std::string("followers: ") + user.username;
                 auto followers = user.getFollowers(txn, decomp, user.pubkey);
 
                 struct {

@@ -26,6 +26,11 @@ pre {
     white-space: pre-line;
 }
 
+h2 {
+    font-size: 125%;
+    margin-bottom: 20px;
+}
+
 /* header */
 
 #ob-header {
@@ -157,6 +162,10 @@ table.vert {
 
 .event {
     margin-bottom: 20px;
+
+    .highlight {
+        font-weight: bold;
+    }
 
     .abbrev {
     }
