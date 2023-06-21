@@ -28,6 +28,10 @@ document.addEventListener('alpine:init', () => {
             this.loggedIn = true;
         },
 
+        myProfile() {
+            return `/u/${this.pubkey}`;
+        },
+
         logout() {
             window.localStorage.setItem('auth', '{}');
 
@@ -42,7 +46,7 @@ document.addEventListener('alpine:init', () => {
         async submit() {
             let ev = {
                 created_at: Math.floor(((new Date()) - 0) / 1000),
-                kind: 0,
+                kind: 1,
                 tags: [],
                 content: this.$refs.post.value,
             };
@@ -50,13 +54,17 @@ document.addEventListener('alpine:init', () => {
             ev = await window.nostr.signEvent(ev);
 
             let resp = await fetch("/submit-post", {
-              method: "post",
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(ev),
+                method: "post",
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(ev),
             });
+
+            let json = await resp.json();
+
+            console.log("result", json);
         },
     }))
 });

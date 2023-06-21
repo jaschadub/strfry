@@ -15,7 +15,7 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
     flat_hash_map<uWS::HttpResponse *, HTTPReq> receivingRequests;
 
     std::vector<bool> tpReaderLock(tpReader.numThreads, false);
-    std::queue<MsgReader> pendingReaderMessages;
+    std::queue<MsgWebReader> pendingReaderMessages;
 
 
     {
@@ -49,13 +49,13 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
         c->pendingRequests.insert(res);
 
         if (req.method == uWS::HttpMethod::METHOD_GET) {
-            auto m = MsgReader{MsgReader::Request{std::move(req), MAX_U64}};
+            auto m = MsgWebReader{MsgWebReader::Request{std::move(req), MAX_U64}};
             bool didDispatch = false;
 
             for (uint64_t i = 0; i < tpReader.numThreads; i++) {
                 if (tpReaderLock[i] == false) {
                     tpReaderLock[i] = true;
-                    std::get<MsgReader::Request>(m.msg).lockedThreadId = i;
+                    std::get<MsgWebReader::Request>(m.msg).lockedThreadId = i;
                     tpReader.dispatch(i, std::move(m));
                     didDispatch = true;
                     break;
@@ -67,7 +67,7 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
             if (remainingBytes) {
                 receivingRequests.emplace(res, std::move(req));
             } else {
-                tpWriter.dispatch(0, MsgWriter{MsgWriter::Request{std::move(req)}});
+                tpWriter.dispatch(0, MsgWebWriter{MsgWebWriter::Request{std::move(req)}});
             }
         } else {
             sendHttpResponse(req, "Method Not Allowed", "405 Method Not Allowed");
@@ -80,7 +80,7 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
         req.body += std::string_view(data, length);
 
         if (remainingBytes) {
-            auto m = MsgWriter{MsgWriter::Request{std::move(req)}};
+            auto m = MsgWebWriter{MsgWebWriter::Request{std::move(req)}};
             receivingRequests.erase(res);
             tpWriter.dispatch(0, std::move(m));
         }
@@ -112,7 +112,7 @@ void WebServer::runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr) {
                     if (pendingReaderMessages.empty()) {
                         tpReaderLock[msg->lockedThreadId] = false;
                     } else {
-                        std::get<MsgReader::Request>(pendingReaderMessages.front().msg).lockedThreadId = msg->lockedThreadId;
+                        std::get<MsgWebReader::Request>(pendingReaderMessages.front().msg).lockedThreadId = msg->lockedThreadId;
                         tpReader.dispatch(msg->lockedThreadId, std::move(pendingReaderMessages.front()));
                         pendingReaderMessages.pop();
                     }

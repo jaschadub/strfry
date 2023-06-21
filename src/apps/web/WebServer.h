@@ -21,6 +21,7 @@ struct HTTPReq : NonCopyable {
     uint64_t connId;
     uWS::HttpResponse *res;
 
+    std::string ipAddr;
     std::string url;
     uWS::HttpMethod method = uWS::HttpMethod::METHOD_INVALID;
     bool acceptGzip = false;
@@ -30,6 +31,7 @@ struct HTTPReq : NonCopyable {
     HTTPReq(uint64_t connId, uWS::HttpResponse *res, uWS::HttpRequest req) : connId(connId), res(res) {
         res->hasHead = true; // We'll be sending our own headers
 
+        ipAddr = res->httpSocket->getAddressBytes();
         method = req.getMethod();
         url = req.getUrl().toString();
         acceptGzip = req.getHeader("accept-encoding").toStringView().find("gzip") != std::string::npos;
@@ -64,7 +66,7 @@ struct MsgHttpsocket : NonCopyable {
     MsgHttpsocket(Var &&msg_) : msg(std::move(msg_)) {}
 };
 
-struct MsgReader : NonCopyable {
+struct MsgWebReader : NonCopyable {
     struct Request {
         HTTPReq req;
         uint64_t lockedThreadId;
@@ -72,17 +74,17 @@ struct MsgReader : NonCopyable {
 
     using Var = std::variant<Request>;
     Var msg;
-    MsgReader(Var &&msg_) : msg(std::move(msg_)) {}
+    MsgWebReader(Var &&msg_) : msg(std::move(msg_)) {}
 };
 
-struct MsgWriter : NonCopyable {
+struct MsgWebWriter : NonCopyable {
     struct Request {
         HTTPReq req;
     };
 
     using Var = std::variant<Request>;
     Var msg;
-    MsgWriter(Var &&msg_) : msg(std::move(msg_)) {}
+    MsgWebWriter(Var &&msg_) : msg(std::move(msg_)) {}
 };
 
 
@@ -92,19 +94,18 @@ struct WebServer {
     // Thread Pools
 
     ThreadPool<MsgHttpsocket> tpHttpsocket;
-    ThreadPool<MsgReader> tpReader;
-    ThreadPool<MsgWriter> tpWriter;
+    ThreadPool<MsgWebReader> tpReader;
+    ThreadPool<MsgWebWriter> tpWriter;
 
     void run();
 
     void runHttpsocket(ThreadPool<MsgHttpsocket>::Thread &thr);
     void dispatchPostRequest();
 
-    void runReader(ThreadPool<MsgReader>::Thread &thr);
-    void handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg);
+    void runReader(ThreadPool<MsgWebReader>::Thread &thr);
+    void handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg);
 
-    void runWriter(ThreadPool<MsgWriter>::Thread &thr);
-    void handleWriteRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWriter::Request *msg);
+    void runWriter(ThreadPool<MsgWebWriter>::Thread &thr);
 
     // Utils
 

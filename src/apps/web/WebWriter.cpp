@@ -1,60 +1,92 @@
 #include "WebServer.h"
-
 #include "WebUtils.h"
+#include "Bech32Utils.h"
+
+#include "PluginWritePolicy.h"
+#include "events.h"
 
 
-
-
-
-void WebServer::handleWriteRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWriter::Request *msg) {
-    auto startTime = hoytech::curr_time_us();
-    const auto &req = msg->req;
-    Url u(req.url);
-
-    LI << "WRITE REQUEST: " << req.url;
-
-    std::string_view code = "200 OK";
-    std::string_view contentType = "application/json; charset=utf-8";
-    std::optional<tao::json::value> body;
-
-    if (u.path.size() == 1) {
-        if (u.path[0] == "submit-post") {
-            LI << "NEW POST: " << req.body;
-        }
-    }
-
-    std::string responseData;
-
-    if (body) {
-        responseData = tao::json::to_string(*body);
-    } else {
-        code = "404 Not Found";
-        responseData = tao::json::to_string(tao::json::value({{ "err", "not found" }}));
-    }
-
-    LI << "Reply: " << code << " / " << responseData.size() << " bytes in " << (hoytech::curr_time_us() - startTime) << "us";
-    sendHttpResponse(req, responseData, code, contentType);
-}
-
-
-
-void WebServer::runWriter(ThreadPool<MsgWriter>::Thread &thr) {
-    Decompressor decomp;
+void WebServer::runWriter(ThreadPool<MsgWebWriter>::Thread &thr) {
+    secp256k1_context *secpCtx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    PluginWritePolicy writePolicy;
 
     while(1) {
         auto newMsgs = thr.inbox.pop_all();
+        auto now = hoytech::curr_time_us();
 
-        auto txn = env.txn_ro();
+        std::vector<EventToWrite> newEvents;
 
         for (auto &newMsg : newMsgs) {
-            if (auto msg = std::get_if<MsgWriter::Request>(&newMsg.msg)) {
-                try {
-                    handleWriteRequest(txn, decomp, msg);
-                } catch (std::exception &e) {
-                    sendHttpResponse(msg->req, "Server error", "500 Server Error");
-                    LE << "500 server error: " << e.what();
+            if (auto msg = std::get_if<MsgWebWriter::Request>(&newMsg.msg)) {
+                auto &req = msg->req;
+                EventSourceType sourceType = req.ipAddr.size() == 4 ? EventSourceType::IP4 : EventSourceType::IP6;
+
+                Url u(req.url);
+                if (u.path.size() != 1 || u.path[0] != "submit-post") {
+                    sendHttpResponse(req, "Not found", "404 Not Found");
+                    continue;
                 }
+
+                std::string flatStr, jsonStr;
+
+                try {
+                    tao::json::value json = tao::json::from_string(req.body);
+                    parseAndVerifyEvent(json, secpCtx, true, true, flatStr, jsonStr);
+                } catch(std::exception &e) {
+                    sendHttpResponse(req, tao::json::to_string(tao::json::value({{ "err", e.what() }})), "404 Not Found", "application/json; charset=utf-8");
+                    continue;
+                }
+
+                newEvents.emplace_back(std::move(flatStr), std::move(jsonStr), now, sourceType, req.ipAddr, &req);
             }
+        }
+
+        try {
+            auto txn = env.txn_rw();
+            writeEvents(txn, newEvents);
+            txn.commit();
+        } catch (std::exception &e) {
+            LE << "Error writing " << newEvents.size() << " events: " << e.what();
+
+            for (auto &newEvent : newEvents) {
+                std::string message = "Write error: ";
+                message += e.what();
+
+                HTTPReq &req = *static_cast<HTTPReq*>(newEvent.userData);
+                sendHttpResponse(req, tao::json::to_string(tao::json::value({{ "err", message }})), "500 Server Error", "application/json; charset=utf-8");
+            }
+
+            continue;
+        }
+
+
+        for (auto &newEvent : newEvents) {
+            auto *flat = flatbuffers::GetRoot<NostrIndex::Event>(newEvent.flatStr.data());
+            auto eventIdHex = to_hex(sv(flat->id()));
+
+            tao::json::value output = tao::json::empty_object;
+            std::string message;
+
+            if (newEvent.status == EventWriteStatus::Written) {
+                LI << "Inserted event. id=" << eventIdHex << " levId=" << newEvent.levId;
+                output["message"] = message = "ok";
+                output["written"] = true;
+                output["event"] = encodeBech32Simple("note", sv(flat->id()));
+            } else if (newEvent.status == EventWriteStatus::Duplicate) {
+                output["message"] = message = "duplicate: have this event";
+                output["written"] = true;
+            } else if (newEvent.status == EventWriteStatus::Replaced) {
+                output["message"] = message = "replaced: have newer event";
+            } else if (newEvent.status == EventWriteStatus::Deleted) {
+                output["message"] = message = "deleted: user requested deletion";
+            }
+
+            if (newEvent.status != EventWriteStatus::Written) {
+                LI << "Rejected event. " << message << ", id=" << eventIdHex;
+            }
+
+            HTTPReq &req = *static_cast<HTTPReq*>(newEvent.userData);
+            sendHttpResponse(req, tao::json::to_string(output), "200 OK", "application/json; charset=utf-8");
         }
     }
 }

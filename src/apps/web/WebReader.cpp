@@ -10,9 +10,6 @@
 
 
 
-
-
-
 struct User {
     std::string pubkey;
 
@@ -631,7 +628,7 @@ void doSearch(lmdb::txn &txn, Decompressor &decomp, std::string_view search, std
 
 
 
-void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgReader::Request *msg) {
+void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg) {
     auto startTime = hoytech::curr_time_us();
     const auto &req = msg->req;
     Url u(req.url);
@@ -757,7 +754,7 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
 
 
 
-void WebServer::runReader(ThreadPool<MsgReader>::Thread &thr) {
+void WebServer::runReader(ThreadPool<MsgWebReader>::Thread &thr) {
     Decompressor decomp;
 
     while(1) {
@@ -766,7 +763,7 @@ void WebServer::runReader(ThreadPool<MsgReader>::Thread &thr) {
         auto txn = env.txn_ro();
 
         for (auto &newMsg : newMsgs) {
-            if (auto msg = std::get_if<MsgReader::Request>(&newMsg.msg)) {
+            if (auto msg = std::get_if<MsgWebReader::Request>(&newMsg.msg)) {
                 try {
                     handleReadRequest(txn, decomp, msg);
                 } catch (std::exception &e) {

@@ -19,6 +19,6 @@ misc
   nip-05 checkmarks
 
 write
-  ! posting
+  ! after posting, redir to your new note
   ! upvote/downvote/flag buttons
   ? edit profile (or maybe just send them to https://metadata.nostr.com/)
