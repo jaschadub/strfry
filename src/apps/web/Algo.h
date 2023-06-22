@@ -10,7 +10,16 @@ struct Algo {
 
 
     Algo(lmdb::txn &txn, std::string_view pubkey) {
-        following = loadFollowing(txn, pubkey);
+        flat_hash_set<std::string> f1;
+
+        loadFollowing(txn, pubkey, f1);
+        LI << "1FOL = " << f1.size();
+
+        auto cp = f1;
+        for (auto &p : cp) loadFollowing(txn, p, f1);
+        LI << "2FOL = " << f1.size();
+
+        std::swap(following, f1);
     }
 
 
@@ -38,9 +47,7 @@ struct Algo {
     }
 
 
-    flat_hash_set<std::string> loadFollowing(lmdb::txn &txn, std::string_view pubkey) {
-        flat_hash_set<std::string> output;
-
+    void loadFollowing(lmdb::txn &txn, std::string_view pubkey, flat_hash_set<std::string> &output) {
         const uint64_t kind = 3;
 
         env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, makeKey_StringUint64Uint64(pubkey, kind, 0), "", [&](std::string_view k, std
@@ -59,7 +66,5 @@ struct Algo {
 
             return false;
         });
-
-        return output;
     }
 };
