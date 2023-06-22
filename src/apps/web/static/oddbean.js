@@ -100,4 +100,53 @@ document.addEventListener("click", async (e) => {
 
     e.target.className = 'loading';
     e.target.innerText = '↻';
+
+    if (which === 'f') return; // not impl
+
+
+    try {
+        let ev = {
+            created_at: Math.floor(((new Date()) - 0) / 1000),
+            kind: 7,
+            tags: [],
+            content: which === 'u' ? '+' : '-',
+        };
+
+        {
+            let response = await fetch(`/e/${note}/raw.json`);
+            let liked = await response.json();
+
+            for (let tag of liked.tags) {
+                if (tag.length >= 2 && (tag[0] === 'e' || tag[0] === 'p')) ev.tags.push(tag);
+            }
+
+            ev.tags.push(['e', liked.id]);
+            ev.tags.push(['p', liked.pubkey]);
+        }
+
+        ev = await window.nostr.signEvent(ev);
+
+        let response = await fetch("/submit-post", {
+            method: "post",
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(ev),
+        });
+
+        let json = await response.json();
+
+        if (json.message === 'ok' && json.written === true) {
+            e.target.className = 'success';
+            e.target.innerText = '✔';
+        } else {
+            throw(Error(`Sending reaction note failed: ${json.message}`));
+            console.error(json);
+        }
+    } catch(e) {
+        console.error(e);
+        e.target.className = 'error';
+        e.target.innerText = '✘';
+    }
 });

@@ -314,6 +314,7 @@ struct EventThread {
 
     flat_hash_map<std::string, flat_hash_set<std::string>> children; // parentEventId -> childEventIds
     std::string pubkeyHighlight;
+    bool isFullThreadLoaded = false;
 
 
     // Load all events under an eventId
@@ -331,6 +332,7 @@ struct EventThread {
 
         eventCache.at(rootEventId).populateRootParent(txn, decomp);
         isRootEventThreadRoot = eventCache.at(rootEventId).root.empty();
+        isFullThreadLoaded = true;
 
 
         std::vector<std::string> pendingQueue;
@@ -400,6 +402,7 @@ struct EventThread {
             std::string timestamp;
             const Event *ev = nullptr;
             const User *user = nullptr;
+            bool isFullThreadLoaded = false;
             bool eventPresent = true;
             bool abbrev = false;
             bool highlight = false;
@@ -420,6 +423,7 @@ struct EventThread {
                 ctx.content = ctx.abbrev ? elem.summary() : elem.json.at("content").get_string();
                 ctx.timestamp = renderTimestamp(now, elem.getCreatedAt());
                 ctx.user = userCache.getUser(txn, decomp, elem.getPubkey());
+                ctx.isFullThreadLoaded = isFullThreadLoaded;
                 ctx.eventPresent = true;
                 ctx.highlight = (pubkey == pubkeyHighlight);
 
@@ -584,6 +588,34 @@ std::string exportUserEvents(lmdb::txn &txn, Decompressor &decomp, std::string_v
 }
 
 
+std::string exportEventThread(lmdb::txn &txn, Decompressor &decomp, std::string_view rootId) {
+    std::string output;
+
+    {
+        auto rootEv = lookupEventById(txn, rootId);
+        if (rootEv) {
+            output += getEventJson(txn, decomp, rootEv->primaryKeyId);
+            output += "\n";
+        }
+    }
+
+    std::string prefix = "e";
+    prefix += rootId;
+
+    env.generic_foreachFull(txn, env.dbi_Event__tag, prefix, "", [&](std::string_view k, std::string_view v){
+        ParsedKey_StringUint64 parsedKey(k);
+        if (parsedKey.s != prefix) return false;
+
+        auto levId = lmdb::from_sv<uint64_t>(v);
+
+        output += getEventJson(txn, decomp, levId);
+        output += "\n";
+
+        return true;
+    });
+
+    return output;
+}
 
 void doSearch(lmdb::txn &txn, Decompressor &decomp, std::string_view search, std::vector<TemplarResult> &results) {
     auto doesPubkeyExist = [&](std::string_view pubkey){
@@ -650,6 +682,16 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
         if (u.path.size() == 2) {
             EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
             body = et.render(txn, decomp, userCache);
+        } else if (u.path.size() == 3) {
+            if (u.path[2] == "raw.json") {
+                auto ev = Event::fromIdExternal(txn, u.path[1]);
+                ev.populateJson(txn, decomp);
+                rawBody = tao::json::to_string(ev.json, 4);
+                contentType = "application/json; charset=utf-8";
+            } else if (u.path[2] == "export.jsonl") {
+                rawBody = exportEventThread(txn, decomp, decodeBech32Simple(u.path[1]));
+                contentType = "application/jsonl+json; charset=utf-8";
+            }
         }
     } else if (u.path[0] == "u") {
         if (u.path.size() == 2) {
