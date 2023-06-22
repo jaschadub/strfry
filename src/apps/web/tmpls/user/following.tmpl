@@ -26,6 +26,7 @@
 
                 if (npubId.empty()) continue;
 
+                if (tag.at(0).get_string() != "p") continue;
                 if (tag.size() >= 3) relay = tag.at(2).get_string();
                 if (tag.size() >= 4) petname = tag.at(3).get_string();
             )

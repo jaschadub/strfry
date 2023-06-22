@@ -96,8 +96,6 @@ document.addEventListener("click", async (e) => {
 
     let note = parent.getAttribute('data-note');
 
-    console.log({which,note});
-
     e.target.className = 'loading';
     e.target.innerText = '↻';
 

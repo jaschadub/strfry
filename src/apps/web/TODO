@@ -1,7 +1,9 @@
+build
+  ! move static/Makefile rules into main system
+  ! bundle static files in strfry binary
+
 read
   ! thread viewer screen. algos?
-  ! export jsonl of event thread
-  ! raw view JSON of event
   ! non-500 error pages when bech32 fails to parse, for example
   ! search field: enter anything, pubkey (hex or npub), eventId, etc. maybe even full-text search?
   ! rss
@@ -10,8 +12,9 @@ read
   ? pagination on user comments screen
 
 styling
-  ! "show full thread" shouldn't appear on root item in thread-view
   ! make URLs in user profiles clickable
+  ! mobile
+  ! favicon
   ? smarter truncation/abbrev (try to cut at a sentence, or word boundary, don't cut URLs)
   ? abbrev comments should be smaller? non-pre tag?
 
@@ -19,6 +22,4 @@ misc
   nip-05 checkmarks
 
 write
-  ! after posting, redir to your new note
-  ! upvote/downvote/flag buttons
   ? edit profile (or maybe just send them to https://metadata.nostr.com/)

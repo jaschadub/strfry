@@ -5,6 +5,7 @@
 
 #include "Bech32Utils.h"
 #include "WebUtils.h"
+#include "Algo.h"
 #include "WebTemplates.h"
 #include "DBQuery.h"
 
@@ -677,7 +678,27 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
     std::string title;
 
     if (u.path.size() == 0) {
-        body = TemplarResult{ "root" };
+        Algo a(txn, from_hex("218238431393959d6c8617a3bd899303a96609b44a644e973891038a7de8622d"));
+        auto events = a.getEvents(txn, 30);
+
+        std::vector<TemplarResult> rendered;
+
+        for (auto levId : events) {
+            auto ev = Event::fromLevId(txn, levId);
+            ev.populateJson(txn, decomp);
+
+            struct {
+                const Event &ev;
+                const User &user;
+            } ctx = {
+                ev,
+                *userCache.getUser(txn, decomp, ev.getPubkey()),
+            };
+
+            rendered.emplace_back(tmpl::eventList::item(ctx));
+        }
+
+        body = tmpl::eventList::list(rendered);
     } else if (u.path[0] == "e") {
         if (u.path.size() == 2) {
             EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));

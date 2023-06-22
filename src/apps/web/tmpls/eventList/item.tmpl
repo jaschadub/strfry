@@ -1,0 +1,8 @@
+<div>
+    <a href="/u/$(ctx.user.npubId)">$(ctx.user.username)</a>
+    <a href="/e/$(ctx.ev.getNoteId())">view</a>
+
+    <pre class="content">
+        $!(ctx.ev.json.at("content").get_string())
+    </pre>
+</div>
