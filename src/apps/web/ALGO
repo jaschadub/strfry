@@ -1,0 +1,21 @@
+let doug = npub1yxprsscnjw2e6myxz73mmzvnqw5kvzd5ffjya9ecjypc5l0gvgksh8qud4
+let mods = doug + followers of doug
+
+[posts]
+
+window 3d
+
+drop if flagged by mods
+
++ 4 if posted by follower of doug
++ 2 if posted by follower' of doug
++ 1 if posted by follower'' of doug
+
++ 0.05 if liked by follower++ of doug
+
+* 0.1 if content matches /bitcoin|btc|crypto/ # boring
+* 3   if content matches /#grownostr/
+
+[comments]
+
+drop if flagged by mods
