@@ -1,12 +1,24 @@
 /* general */
 
+@media (min-width: 300px) and (max-width: 750px) {
+    body {
+        padding: 0;
+        margin: 0;
+        width: 100%;
+    }
+}
+
+@media (min-width: 751px) {
+    body {
+        width: 85%;
+        margin: 8px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
 body {
     font-family: sans-serif;
-
-    margin: 8px;
-    width: 85%;
-    margin-left: auto;
-    margin-right: auto;
 }
 
 a:link, a:visited {
@@ -159,7 +171,14 @@ table.vert {
 
 .event {
     margin-bottom: 20px;
-    overflow-x: clip;
+
+    .event-present {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .header {
+    }
 
     .highlight {
         font-weight: bold;
@@ -168,12 +187,8 @@ table.vert {
     .abbrev {
     }
 
-    .header {
-    }
-
     .content {
         margin-top: 10px;
-        padding-left: 10px;
     }
 
     .replies {
@@ -202,7 +217,7 @@ table.vert {
 /* communities */
 
 .community-item {
-    margin-bottom: 15px;
+    margin-bottom: 8px;
     overflow: hidden;
 
     display: flex;
@@ -210,13 +225,7 @@ table.vert {
 
     .left {
         padding-right: 5px;
-    }
-
-    .votes {
-        padding-right: 5px;
-
-        display: flex;
-        flex-direction: column;
+        color: #828282;
     }
 
     .summary > a:link, .summary > a:visited {
@@ -225,7 +234,25 @@ table.vert {
     }
 
     .info {
-        padding-top: 3px;
-        font-size: 80%;
+        padding-top: 5px;
+        font-size: 75%;
+        color: #828282;
+    }
+}
+
+
+/* voting */
+
+.vote-buttons {
+    padding-right: 5px;
+    color: #828282;
+    font-size: 16px;
+    justify-content: flex-start;
+
+    display: flex;
+    flex-direction: column;
+
+    > span {
+        margin-bottom: 2px;
     }
 }

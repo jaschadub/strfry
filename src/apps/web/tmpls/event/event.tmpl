@@ -1,10 +1,32 @@
 <div class='event $(ctx.abbrev ? "abbrev" : "")'>
     <> ?(ctx.eventPresent)
-        $(tmpl::event::header(ctx))
+        <div class="event-present vote-context" data-note="$(ctx.ev->getNoteId())">
+            <div class="vote-buttons">
+                <span class="u">▲</span>
+                <span class="d">▼</span>
+            </div>
 
-        <pre class="content">
-            $!(ctx.content)
-        </pre>
+            <div class="content-container">
+                <div class="header">
+                    <a class='$(ctx.highlight ? "highlight" : "")' href="/u/$(ctx.user->npubId)">$(ctx.user->username)</a>
+                    | <a href="/e/$(ctx.ev->getNoteId())">$(ctx.timestamp)</a>
+                      (<a href="/e/$(ctx.ev->getNoteId())/raw.json">raw</a>)
+                    <> | <a href="/e/$(ctx.ev->getRootNoteId())">root</a> </> ?(ctx.ev->root.size())
+
+                    <> | <a href="/e/$(ctx.ev->getNoteId())">show full thread</a> </> ?(ctx.ev->root.empty() && !ctx.isFullThreadLoaded)
+                    <> | <a href="/e/$(ctx.ev->getNoteId())/export.jsonl">export</a> </> ?(ctx.ev->root.empty() && ctx.isFullThreadLoaded)
+
+                    <> | <a href="/e/$(ctx.ev->getParentNoteId())">parent</a> </> ?(ctx.ev->parent.size())
+                    | <span class="f">flag</span>
+                    <>+$(ctx.ev->upVotes)</> ?(ctx.ev->upVotes)
+                    <>-$(ctx.ev->downVotes)</> ?(ctx.ev->downVotes)
+                </div>
+
+                <pre class="content">
+                    $!(ctx.content)
+                </pre>
+            </div>
+        </div>
     </>
 
     <> ?(!ctx.eventPresent)

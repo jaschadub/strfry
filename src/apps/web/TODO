@@ -15,6 +15,7 @@ styling
   ! make nostr:note1... refs clickable
   ! mobile
   ! favicon
+  ! make login/upvote/etc buttons do something when not logged in/no nostr plugin installed
   ? smarter truncation/abbrev (try to cut at a sentence, or word boundary, don't cut URLs)
   ? abbrev comments should be smaller? non-pre tag?
 
