@@ -11,6 +11,14 @@
 
 
 
+
+
+
+std::string stripUrls(std::string &content);
+
+
+
+
 struct User {
     std::string pubkey;
 
@@ -190,15 +198,33 @@ struct Event {
         return encodeBech32Simple("note", root);
     }
 
-    std::string summary() const {
-        // FIXME: Use "subject" tag if present?
-        // FIXME: Don't truncate UTF-8 mid-sequence
-        // FIXME: Don't put ellipsis if truncated text ends in punctuation
+    // FIXME: Use "subject" tag if present?
+    // FIXME: Don't truncate UTF-8 mid-sequence
+    // FIXME: Don't put ellipsis if truncated text ends in punctuation
 
-        const size_t maxLen = 100;
-        const auto &content = json.at("content").get_string();
-        if (content.size() <= maxLen) return content;
-        return content.substr(0, maxLen-3) + "...";
+    std::string summaryHtml() const {
+        std::string content = json.at("content").get_string();
+        auto firstUrl = stripUrls(content);
+
+        auto textAbbrev = [](std::string &str, size_t maxLen){
+            if (str.size() > maxLen) str = str.substr(0, maxLen-3) + "...";
+        };
+
+        textAbbrev(content, 100);
+        templarInternal::htmlEscape(content, true);
+
+        if (firstUrl.size()) {
+            while (content.size() && isspace(content.back())) content.pop_back();
+            if (content.empty()) {
+                content = firstUrl;
+                textAbbrev(content, 100);
+                templarInternal::htmlEscape(content, true);
+            }
+
+            return std::string("<a href=\"") + templarInternal::htmlEscape(firstUrl, true) + "\">" + content + "</a>";
+        }
+
+        return content;
     }
 
 
@@ -248,7 +274,6 @@ struct Event {
         }
     }
 };
-
 
 
 
@@ -305,6 +330,34 @@ void preprocessContent(lmdb::txn &txn, Decompressor &decomp, const Event &ev, Us
         std::swap(output, content);
     }
 }
+
+
+std::string stripUrls(std::string &content) {
+    static RE2 matcher(R"((?is)(.*?)(https?://\S+))");
+
+    std::string output;
+    std::string firstUrl;
+
+    std::string_view contentSv(content);
+    re2::StringPiece input(contentSv);
+    re2::StringPiece prefix, match;
+
+    auto sv = [](re2::StringPiece s){ return std::string_view(s.data(), s.size()); };
+
+    while (RE2::Consume(&input, matcher, &prefix, &match)) {
+        output += sv(prefix);
+
+        if (firstUrl.empty()) {
+            firstUrl = std::string(sv(match));
+        }
+    }
+
+    output += std::string_view(input.data(), input.size());
+
+    std::swap(output, content);
+    return firstUrl;
+}
+
 
 
 
@@ -419,19 +472,22 @@ struct EventThread {
                 processedLevIds.insert(elem.ev.primaryKeyId);
 
                 auto pubkey = elem.getPubkey();
-                ctx.abbrev = focusOnPubkey && *focusOnPubkey != pubkey;
 
-                ctx.content = ctx.abbrev ? elem.summary() : elem.json.at("content").get_string();
                 ctx.timestamp = renderTimestamp(now, elem.getCreatedAt());
                 ctx.user = userCache.getUser(txn, decomp, elem.getPubkey());
                 ctx.isFullThreadLoaded = isFullThreadLoaded;
                 ctx.eventPresent = true;
                 ctx.highlight = (pubkey == pubkeyHighlight);
 
-                ctx.ev = &elem;
+                ctx.abbrev = focusOnPubkey && *focusOnPubkey != pubkey;
+                if (ctx.abbrev) {
+                    ctx.content = elem.summaryHtml();
+                } else {
+                    ctx.content = templarInternal::htmlEscape(elem.json.at("content").get_string(), false);
+                    preprocessContent(txn, decomp, elem, userCache, ctx.content);
+                }
 
-                ctx.content = templarInternal::htmlEscape(ctx.content, false);
-                preprocessContent(txn, decomp, elem, userCache, ctx.content);
+                ctx.ev = &elem;
             } else {
                 ctx.eventPresent = false;
             }
@@ -679,23 +735,32 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
 
     if (u.path.size() == 0) {
         Algo a(txn, from_hex("218238431393959d6c8617a3bd899303a96609b44a644e973891038a7de8622d"));
-        auto events = a.getEvents(txn, 30);
+        auto events = a.getEvents(txn, 300);
 
         std::vector<TemplarResult> rendered;
+        auto now = hoytech::curr_time_s();
+        uint64_t n = 1;
 
-        for (auto levId : events) {
-            auto ev = Event::fromLevId(txn, levId);
+        for (auto &fe : events) {
+            auto ev = Event::fromLevId(txn, fe.levId);
             ev.populateJson(txn, decomp);
 
             struct {
+                uint64_t n;
                 const Event &ev;
                 const User &user;
+                std::string timestamp;
+                Algo::EventInfo &info;
             } ctx = {
+                n,
                 ev,
                 *userCache.getUser(txn, decomp, ev.getPubkey()),
+                renderTimestamp(now, ev.getCreatedAt()),
+                fe.info,
             };
 
             rendered.emplace_back(tmpl::eventList::item(ctx));
+            n++;
         }
 
         body = tmpl::eventList::list(rendered);

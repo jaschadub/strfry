@@ -8,11 +8,11 @@ read
   ! search field: enter anything, pubkey (hex or npub), eventId, etc. maybe even full-text search?
   ! rss
   ! click on up/down vote counts to see who voted
-  ? make nostr:note1... refs clickable
   ? pagination on user comments screen
 
 styling
   ! make URLs in user profiles clickable
+  ! make nostr:note1... refs clickable
   ! mobile
   ! favicon
   ? smarter truncation/abbrev (try to cut at a sentence, or word boundary, don't cut URLs)

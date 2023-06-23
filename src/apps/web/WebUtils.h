@@ -46,3 +46,11 @@ inline std::string renderTimestamp(uint64_t now, uint64_t ts) {
 
     return output;
 }
+
+inline std::string renderPoints(double points) {
+    char buf[100];
+
+    snprintf(buf, sizeof(buf), "%g", points);
+
+    return std::string(buf);
+}

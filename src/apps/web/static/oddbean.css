@@ -196,3 +196,27 @@ table.vert {
         text-weight: bold;
     }
 }
+
+
+/* communities */
+
+.community-item {
+    margin-bottom: 15px;
+
+    display: flex;
+    flex-direction: row;
+
+    .left {
+        padding-right: 5px;
+    }
+
+    .summary > a:link, .summary > a:visited {
+        text-decoration: none;
+        color: black;
+    }
+
+    .info {
+        padding-top: 3px;
+        font-size: 80%;
+    }
+}

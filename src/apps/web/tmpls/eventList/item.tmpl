@@ -1,8 +1,19 @@
-<div>
-    <a href="/u/$(ctx.user.npubId)">$(ctx.user.username)</a>
-    <a href="/e/$(ctx.ev.getNoteId())">view</a>
+<div class="community-item">
+    <div class="left">
+        ▲
+        $(ctx.n).
+    </div>
 
-    <pre class="content">
-        $!(ctx.ev.json.at("content").get_string())
-    </pre>
+    <div class="right">
+        <div class="summary">
+            <a href="/e/$(ctx.ev.getNoteId())">$!(ctx.ev.summaryHtml())</a>
+        </div>
+
+        <div class="info">
+            <span>$(renderPoints(ctx.info.score))</span> points by
+            <a href="/u/$(ctx.user.npubId)">$(ctx.user.username)</a>
+            $(ctx.timestamp) |
+            <a href="/e/$(ctx.ev.getNoteId())">$(ctx.info.comments) comments</a>
+        </div>
+    </div>
 </div>
