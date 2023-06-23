@@ -88,7 +88,7 @@ document.addEventListener('alpine:init', () => {
 
 
 document.addEventListener("click", async (e) => {
-    let parent = e.target.closest(".do-vote");
+    let parent = e.target.closest(".vote-context");
     if (!parent) return;
 
     let which = e.target.className;
@@ -142,8 +142,8 @@ document.addEventListener("click", async (e) => {
             throw(Error(`Sending reaction note failed: ${json.message}`));
             console.error(json);
         }
-    } catch(e) {
-        console.error(e);
+    } catch(err) {
+        console.error(err);
         e.target.className = 'error';
         e.target.innerText = '✘';
     }

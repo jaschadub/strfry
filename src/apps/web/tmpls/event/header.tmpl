@@ -1,4 +1,4 @@
-<div class="header">
+<div class="header vote-context" data-note="$(ctx.ev->getNoteId())">
     <a class='$(ctx.highlight ? "highlight" : "")' href="/u/$(ctx.user->npubId)">$(ctx.user->username)</a>
     | <a href="/e/$(ctx.ev->getNoteId())">$(ctx.timestamp)</a>
       (<a href="/e/$(ctx.ev->getNoteId())/raw.json">raw</a>)
@@ -9,11 +9,7 @@
 
     <> | <a href="/e/$(ctx.ev->getParentNoteId())">parent</a> </> ?(ctx.ev->parent.size())
     |
-    <span class="do-vote" data-note="$(ctx.ev->getNoteId())">
-        <span class="u">▲</span>
-        <span class="d">▼</span>
-        <span class="f">⚑</span>
-    </span>
+    <span class="u">▲</span> <span class="d">▼</span> <span class="f">⚑</span>
     <>+$(ctx.ev->upVotes)</> ?(ctx.ev->upVotes)
     <>-$(ctx.ev->downVotes)</> ?(ctx.ev->downVotes)
 </div>

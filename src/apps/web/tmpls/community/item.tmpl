@@ -1,7 +1,11 @@
-<div class="community-item">
+<div class="community-item vote-context" data-note="$(ctx.ev.getNoteId())">
     <div class="left">
-        ▲
-        $(ctx.n).
+        <div>$(ctx.n).</div>
+    </div>
+
+    <div class="votes">
+        <span class="u">▲</span>
+        <span class="d">▼</span>
     </div>
 
     <div class="right">
@@ -13,6 +17,7 @@
             <span>$(renderPoints(ctx.info.score))</span> points by
             <a href="/u/$(ctx.user.npubId)">$(ctx.user.username)</a>
             $(ctx.timestamp) |
+            <span class="f">flag</span> |
             <a href="/e/$(ctx.ev.getNoteId())">$(ctx.info.comments) comments</a>
         </div>
     </div>

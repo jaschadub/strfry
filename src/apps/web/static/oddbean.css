@@ -159,6 +159,7 @@ table.vert {
 
 .event {
     margin-bottom: 20px;
+    overflow-x: clip;
 
     .highlight {
         font-weight: bold;
@@ -202,12 +203,20 @@ table.vert {
 
 .community-item {
     margin-bottom: 15px;
+    overflow: hidden;
 
     display: flex;
     flex-direction: row;
 
     .left {
         padding-right: 5px;
+    }
+
+    .votes {
+        padding-right: 5px;
+
+        display: flex;
+        flex-direction: column;
     }
 
     .summary > a:link, .summary > a:visited {

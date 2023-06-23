@@ -759,11 +759,11 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
                 fe.info,
             };
 
-            rendered.emplace_back(tmpl::eventList::item(ctx));
+            rendered.emplace_back(tmpl::community::item(ctx));
             n++;
         }
 
-        body = tmpl::eventList::list(rendered);
+        body = tmpl::community::list(rendered);
     } else if (u.path[0] == "e") {
         if (u.path.size() == 2) {
             EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
