@@ -48,7 +48,6 @@ struct Algo {
             auto kind = ev.flat_nested()->kind();
             auto id = sv(ev.flat_nested()->id());
 
-if (id == from_hex("24b371a0ef8cd3a072b66d802dab3bd9a1c4a03b57b99fed388a7573cbc60852")) LI << "BING";
             if (kind == 1) {
                 auto pubkey = std::string(sv(ev.flat_nested()->pubkey()));
 
@@ -56,7 +55,6 @@ if (id == from_hex("24b371a0ef8cd3a072b66d802dab3bd9a1c4a03b57b99fed388a7573cbc6
                 for (const auto &tagPair : *(ev.flat_nested()->tagsFixed32())) {
                     if ((char)tagPair->key() == 'e') {
                         auto tagEventId = std::string(sv(tagPair->val()));
-if (id == from_hex("24b371a0ef8cd3a072b66d802dab3bd9a1c4a03b57b99fed388a7573cbc60852")) LI << "Z: " << to_hex(tagEventId);
                         eventInfoCache.emplace(tagEventId, EventInfo{});
                         eventInfoCache[tagEventId].comments++;
                         foundETag = true;
@@ -68,7 +66,7 @@ if (id == from_hex("24b371a0ef8cd3a072b66d802dab3bd9a1c4a03b57b99fed388a7573cbc6
                 auto &eventInfo = eventInfoCache[id];
 
                 if (!following.contains(pubkey)) return true;
-                if (eventInfo.score < 5.0) return true;
+                if (eventInfo.score < 20.0) return true;
 
                 output.emplace_back(FilteredEvent{ev.primaryKeyId, std::string(id), eventInfo});
             } else if (kind == 7) {

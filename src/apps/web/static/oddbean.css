@@ -171,10 +171,15 @@ table.vert {
 
 .event {
     margin-bottom: 20px;
+    overflow-x: clip;
 
     .event-present {
         display: flex;
         flex-direction: row;
+    }
+
+    .event-not-present {
+        color: red;
     }
 
     .header {
@@ -188,7 +193,7 @@ table.vert {
     }
 
     .content {
-        margin-top: 10px;
+        padding-left: 25px;
     }
 
     .replies {
