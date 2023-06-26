@@ -195,7 +195,9 @@ table.vert {
     .content {
         padding-left: 25px;
     }
+}
 
+.event-root {
     .replies {
         margin-top: 20px;
         padding-left: 20px;
