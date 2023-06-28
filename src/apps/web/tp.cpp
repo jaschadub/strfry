@@ -8,7 +8,7 @@
 
 namespace pegtl = TAO_PEGTL_NAMESPACE;
 
-namespace algo {
+namespace algo_parser {
     // Whitespace
 
     struct comment :
@@ -222,7 +222,7 @@ int main( int argc, char** argv ) {
     std::string name;
 
     pegtl::memory_input in(str, "std::cin");
-    if (pegtl::parse< algo::main, algo::action >( in, name )) {
+    if (pegtl::parse< algo_parser::main, algo_parser::action >( in, name )) {
         std::cout << name << std::endl;
     } else {
         std::cerr << "parse error" << std::endl;
