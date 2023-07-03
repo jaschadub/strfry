@@ -18,6 +18,7 @@ styling
   ! make login/upvote/etc buttons do something when not logged in/no nostr plugin installed
   ? smarter truncation/abbrev (try to cut at a sentence, or word boundary, don't cut URLs)
   ? abbrev comments should be smaller? non-pre tag?
+  ! limit name length: http://localhost:8080/u/npub1e44hczvjqvnp5shx9tmapmw5w6q9x98wdrd2lxhmwfsdmuf5gp9qwvpk6g
 
 misc
   nip-05 checkmarks

@@ -1,10 +1,66 @@
-// g++ -std=c++20 -g -I ../../../golpe/external/PEGTL/include/ tp.cpp 
-// printf 'let asdf = npub1a + npub1b - npub1c;' | ./a.out
-
 #include <iostream>
 #include <string>
 
 #include <tao/pegtl.hpp>
+
+#include "events.h"
+
+
+
+
+
+struct AlgoParseState {
+    std::vector<flat_hash_set<std::string>> pubkeySets;
+    flat_hash_map<std::string, uint64_t> variableIndexLookup; // variableName -> index into pubkeySets
+
+    struct Expression {
+        std::deque<flat_hash_set<std::string>> terms;
+        std::deque<std::string> ops;
+    };
+
+    std::vector<Expression> expressionStack;
+
+    void letStart(std::string_view name) {
+        variableIndexLookup[name] = pubkeySets.size();
+        pubkeySets.push_back({});
+
+        expressionStart();
+    }
+
+    void letEnd() {
+    }
+
+    void expressionStart() {
+        expressionStack.push_back({});
+    }
+
+    //void expressionAddTerm(lmdb::txn &txn, QQQ
+
+
+    void loadFollowing(lmdb::txn &txn, std::string_view pubkey, flat_hash_set<std::string> &output) {
+        const uint64_t kind = 3;
+
+        env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, makeKey_StringUint64Uint64(pubkey, kind, 0), "", [&](std::string_view k, std
+::string_view v){
+            ParsedKey_StringUint64Uint64 parsedKey(k);
+
+            if (parsedKey.s == pubkey && parsedKey.n1 == kind) {
+                auto levId = lmdb::from_sv<uint64_t>(v);
+                auto ev = lookupEventByLevId(txn, levId);
+
+                for (const auto &tagPair : *(ev.flat_nested()->tagsFixed32())) {
+                    if ((char)tagPair->key() != 'p') continue;
+                    output.insert(std::string(sv(tagPair->val())));
+                }
+            }
+
+            return false;
+        });
+    }
+};
+
+
+
 
 namespace pegtl = TAO_PEGTL_NAMESPACE;
 
@@ -44,9 +100,13 @@ namespace algo_parser {
 
     struct pubkeyGroupOpen : pegtl::one< '(' > {};
     struct pubkeyGroupClose : pegtl::one< ')' > {};
+    struct followerExpandHat : pegtl::one< '^' > {};
 
     struct pubkeyGroup : pegtl::sor<
-        pubkey,
+        pegtl::seq<
+            pubkey,
+            pegtl::star<followerExpandHat>
+        >,
         pegtl::seq<
             pad< pubkeyGroupOpen >,
             pubkeyList,
@@ -60,7 +120,9 @@ namespace algo_parser {
 
     struct letIdentifier : pegtl::identifier {};
 
-    struct variableIdentifier : pegtl::seq< pegtl::not_at< npub >, pegtl::identifier > {};
+    struct variableIdentifier : pegtl::seq< pegtl::not_at< npub >, letIdentifier > {};
+
+    struct letTerminator : pegtl::one< ';' > {};
 
     struct let :
         pegtl::seq<
@@ -68,7 +130,7 @@ namespace algo_parser {
             pad< variableIdentifier >,
             pad< pegtl::one< '=' > >,
             pad< pubkeyList >,
-            pegtl::one< ';' >
+            letTerminator
         > {};
 
 
@@ -151,18 +213,20 @@ namespace algo_parser {
     template< typename Rule >
     struct action {};
 
+
     template<>
     struct action< letIdentifier > {
         template< typename ActionInput >
-        static void apply( const ActionInput& in, std::string& v ) {
+        static void apply(const ActionInput &in, AlgoParseState &state) {
             std::cout << "LET: " << in.string() << std::endl;
+            //state.addLetVar(in.string_view());
         }
     };
 
     template<>
     struct action< pubkey > {
         template< typename ActionInput >
-        static void apply( const ActionInput& in, std::string& v ) {
+        static void apply(const ActionInput& in, AlgoParseState &state) {
             std::cout << "PK: " << in.string() << std::endl;
         }
     };
@@ -170,7 +234,7 @@ namespace algo_parser {
     template<>
     struct action< pubkeyGroupOpen > {
         template< typename ActionInput >
-        static void apply( const ActionInput& in, std::string& v ) {
+        static void apply(const ActionInput &in, AlgoParseState &state) {
             std::cout << "PKGRPOPEN: " << in.string() << std::endl;
         }
     };
@@ -178,11 +242,12 @@ namespace algo_parser {
     template<>
     struct action< pubkeyGroupClose > {
         template< typename ActionInput >
-        static void apply( const ActionInput& in, std::string& v ) {
+        static void apply(const ActionInput &in, AlgoParseState &state) {
             std::cout << "PKGRPCLOSE: " << in.string() << std::endl;
         }
     };
 
+/*
     template<>
     struct action< pubkeyList > {
         template< typename ActionInput >
@@ -206,25 +271,18 @@ namespace algo_parser {
             std::cout << "RE: " << in.string() << std::endl;
         }
     };
+    */
 }
 
-int main( int argc, char** argv ) {
-    std::string str;
 
-    {
-        std::string line;
-        while (std::getline(std::cin, line)) {
-            str += line;
-            str += "\n";
-        }
+inline AlgoParseState parseAlgo(lmdb::txn &txn, std::string_view algoText) {
+    AlgoParseState state;
+
+    pegtl::memory_input in(algoText, "");
+
+    if (!pegtl::parse< algo_parser::main, algo_parser::action >(in, state)) {
+        throw herr("algo parse error");
     }
 
-    std::string name;
-
-    pegtl::memory_input in(str, "std::cin");
-    if (pegtl::parse< algo_parser::main, algo_parser::action >( in, name )) {
-        std::cout << name << std::endl;
-    } else {
-        std::cerr << "parse error" << std::endl;
-    }
+    return state;
 }

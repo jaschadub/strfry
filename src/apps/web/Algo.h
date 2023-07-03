@@ -4,6 +4,8 @@
 
 #include "events.h"
 
+#include "AlgoParser.h"
+
 
 struct Algo {
     struct EventInfo {
