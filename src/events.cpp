@@ -341,7 +341,7 @@ void writeEvents(lmdb::txn &txn, std::vector<EventToWrite> &evs, uint64_t logLev
             tmpBuf.clear();
             tmpBuf += '\x00';
             tmpBuf += ev.jsonStr;
-            env.dbi_EventPayload.put(txn, lmdb::to_sv<uint64_t>(ev.levId), tmpBuf);
+            env.dbi_EventPayload.put(txn, lmdb::to_sv<uint64_t>(ev.levId), tmpBuf, MDB_APPEND);
 
             ev.status = EventWriteStatus::Written;
 
