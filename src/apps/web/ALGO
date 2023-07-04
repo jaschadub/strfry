@@ -1,6 +1,7 @@
 let admin = npub1yxprsscnjw2e6myxz73mmzvnqw5kvzd5ffjya9ecjypc5l0gvgksh8qud4;
 let mods = admin^;
 let members = admin^^;
+# let mods = admin.following
 
 posts {
     drop if flagged by mods;

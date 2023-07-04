@@ -8,33 +8,41 @@
 
 
 
+struct AlgoCompiled {
+    using PubkeySet = flat_hash_set<std::string>;
+    std::vector<PubkeySet> pubkeySets;
+    flat_hash_map<std::string, uint64_t> variableIndexLookup; // variableName -> index into pubkeySets
+};
+
 
 struct AlgoParseState {
-    std::vector<flat_hash_set<std::string>> pubkeySets;
-    flat_hash_map<std::string, uint64_t> variableIndexLookup; // variableName -> index into pubkeySets
+    AlgoCompiled a;
 
-    struct Expression {
-        std::deque<flat_hash_set<std::string>> terms;
-        std::deque<std::string> ops;
-    };
-
-    std::vector<Expression> expressionStack;
+    std::vector<AlgoCompiled::PubkeySet> pubkeySetStack;
+    std::string currInfixOp;
 
     void letStart(std::string_view name) {
-        variableIndexLookup[name] = pubkeySets.size();
-        pubkeySets.push_back({});
-
-        expressionStart();
+        a.variableIndexLookup[name] = a.pubkeySets.size();
+        pubkeySetStack.push_back({});
     }
 
     void letEnd() {
+        a.pubkeySets.emplace_back(std::move(pubkeySetStack.back()));
+        pubkeySetStack.clear();
     }
 
-    void expressionStart() {
-        expressionStack.push_back({});
+    void letAddToPubkeySet(std::string_view id) {
+        AlgoCompiled::PubkeySet set;
+
+        if (id.starts_with('npub1')) {
+        } else {
+            if (!a.variableIndexLookup.contains(id)) throw herr("variable not found: ", id);
+            auto n = a.variableIndexLookup[id];
+            if (n >= a.pubkeySets.size()) throw herr("self referential variable: ", id);
+        }
     }
 
-    //void expressionAddTerm(lmdb::txn &txn, QQQ
+
 
 
     void loadFollowing(lmdb::txn &txn, std::string_view pubkey, flat_hash_set<std::string> &output) {
@@ -118,9 +126,9 @@ namespace algo_parser {
 
     // Let statements
 
-    struct letIdentifier : pegtl::identifier {};
+    struct variableIdentifier : pegtl::seq< pegtl::not_at< npub >, pegtl::identifier > {};
 
-    struct variableIdentifier : pegtl::seq< pegtl::not_at< npub >, letIdentifier > {};
+    struct letIdentifier : variableIdentifier {};
 
     struct letTerminator : pegtl::one< ';' > {};
 
@@ -217,12 +225,22 @@ namespace algo_parser {
     template<>
     struct action< letIdentifier > {
         template< typename ActionInput >
-        static void apply(const ActionInput &in, AlgoParseState &state) {
+        static void apply(const ActionInput &in, AlgoParseState &a) {
             std::cout << "LET: " << in.string() << std::endl;
-            //state.addLetVar(in.string_view());
+            a.letStart(in.string_view());
         }
     };
 
+    template<>
+    struct action< letIdentifier > {
+        template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
+            std::cout << "LETEND: " << in.string() << std::endl;
+            a.letEnd();
+        }
+    };
+
+/*
     template<>
     struct action< pubkey > {
         template< typename ActionInput >
@@ -246,6 +264,7 @@ namespace algo_parser {
             std::cout << "PKGRPCLOSE: " << in.string() << std::endl;
         }
     };
+    */
 
 /*
     template<>
