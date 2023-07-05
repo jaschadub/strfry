@@ -28,4 +28,8 @@ void cmd_algo(const std::vector<std::string> &subArgs) {
     }
 
     auto alg = parseAlgo(txn, str);
+
+    for (const auto &[k, v] : alg.variableIndexLookup) {
+        LI << k << " = " << alg.pubkeySets[v].size() << " recs";
+    }
 }

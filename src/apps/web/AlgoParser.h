@@ -2,8 +2,10 @@
 #include <string>
 
 #include <tao/pegtl.hpp>
+#include <re2/re2.h>
 
 #include "events.h"
+#include "Bech32Utils.h"
 
 
 
@@ -12,40 +14,129 @@ struct AlgoCompiled {
     using PubkeySet = flat_hash_set<std::string>;
     std::vector<PubkeySet> pubkeySets;
     flat_hash_map<std::string, uint64_t> variableIndexLookup; // variableName -> index into pubkeySets
+
+    PubkeySet *mods = nullptr;
+    PubkeySet *voters = nullptr;
+
+    struct Filter {
+        RE2 re;
+        char op;
+        double arg;
+    };
+
+    std::vector<Filter> filters;
+
+    void updateScore(lmdb::txn &txn, Decompressor &decomp, const defaultDb::environment::View_Event &e, double &score) {
+        auto rawJson = getEventJson(txn, decomp, e.primaryKeyId);
+        re2::StringPiece rawJsonSP(rawJson);
+
+        for (const auto &f : filters) {
+            if (!RE2::PartialMatch(rawJsonSP, f.re)) continue;
+
+            if (f.op == '+') score += f.arg;
+            else if (f.op == '-') score -= f.arg;
+            else if (f.op == '*') score *= f.arg;
+            else if (f.op == '/') score /= f.arg;
+        }
+    }
 };
 
 
 struct AlgoParseState {
+    lmdb::txn &txn;
+
     AlgoCompiled a;
 
-    std::vector<AlgoCompiled::PubkeySet> pubkeySetStack;
-    std::string currInfixOp;
+    struct ExpressionState {
+        std::string currInfixOp;
+        AlgoCompiled::PubkeySet set;
+    };
+
+    std::vector<ExpressionState> expressionStateStack;
+    std::string currPubkeyDesc;
+    std::vector<std::string> currModifiers;
+
+    std::string currSetterVar;
+
+    AlgoParseState(lmdb::txn &txn) : txn(txn) {}
 
     void letStart(std::string_view name) {
+        if (a.variableIndexLookup.contains(name)) throw herr("overwriting variable: ", name);
         a.variableIndexLookup[name] = a.pubkeySets.size();
-        pubkeySetStack.push_back({});
+        expressionStateStack.push_back({ "+" });
     }
 
     void letEnd() {
-        a.pubkeySets.emplace_back(std::move(pubkeySetStack.back()));
-        pubkeySetStack.clear();
+        a.pubkeySets.emplace_back(std::move(expressionStateStack.back().set));
+        expressionStateStack.clear();
     }
 
-    void letAddToPubkeySet(std::string_view id) {
+    void letAddExpression() {
+        const auto &id = currPubkeyDesc;
         AlgoCompiled::PubkeySet set;
 
-        if (id.starts_with('npub1')) {
+        if (id.starts_with("npub1")) {
+            set.insert(decodeBech32Simple(id));
         } else {
             if (!a.variableIndexLookup.contains(id)) throw herr("variable not found: ", id);
             auto n = a.variableIndexLookup[id];
             if (n >= a.pubkeySets.size()) throw herr("self referential variable: ", id);
+            set = a.pubkeySets[n];
+        }
+
+        for (const auto &m : currModifiers) {
+            if (m == "following") {
+                AlgoCompiled::PubkeySet newSet = set;
+                for (const auto &p : set) loadFollowing(p, newSet);
+                set = newSet;
+            } else {
+                throw herr("unrecognised modifier: ", m);
+            }
+        }
+
+        currPubkeyDesc = "";
+        currModifiers.clear();
+
+        mergeInfix(set);
+    }
+
+    void mergeInfix(AlgoCompiled::PubkeySet &set) {
+        auto &currInfixOp = expressionStateStack.back().currInfixOp;
+
+        if (currInfixOp == "+") {
+            for (const auto &e : set) {
+                expressionStateStack.back().set.insert(e);
+            }
+        } else if (currInfixOp == "-") {
+            for (const auto &e : set) {
+                expressionStateStack.back().set.erase(e);
+            }
+        } else if (currInfixOp == "&") {
+            AlgoCompiled::PubkeySet intersection;
+
+            for (const auto &e : set) {
+                if (expressionStateStack.back().set.contains(e)) intersection.insert(e);
+            }
+
+            std::swap(intersection, expressionStateStack.back().set);
         }
     }
 
 
 
+    void installSetter(std::string_view val) {
+        if (!a.variableIndexLookup.contains(val)) throw herr("unknown variable: ", val);
+        auto *setPtr = &a.pubkeySets[a.variableIndexLookup[val]];
 
-    void loadFollowing(lmdb::txn &txn, std::string_view pubkey, flat_hash_set<std::string> &output) {
+        if (currSetterVar == "mods") a.mods = setPtr;
+        else if (currSetterVar == "voters") a.voters = setPtr;
+    }
+
+
+
+
+
+    void loadFollowing(std::string_view pubkey, flat_hash_set<std::string> &output) {
         const uint64_t kind = 3;
 
         env.generic_foreachFull(txn, env.dbi_Event__pubkeyKind, makeKey_StringUint64Uint64(pubkey, kind, 0), "", [&](std::string_view k, std
@@ -101,20 +192,22 @@ namespace algo_parser {
             pegtl::identifier
         > {};
 
-    struct pubkeySetOp : pegtl::one< '+', '-' > {};
+    struct pubkeySetOp : pegtl::one< '+', '-', '&' > {};
 
     struct pubkeyGroup;
     struct pubkeyList : pegtl::list< pubkeyGroup, pubkeySetOp, ws > {};
 
     struct pubkeyGroupOpen : pegtl::one< '(' > {};
     struct pubkeyGroupClose : pegtl::one< ')' > {};
-    struct followerExpandHat : pegtl::one< '^' > {};
+
+    struct pubkeyModifier : pegtl::identifier {};
+    struct pubkeyExpression : pegtl::seq<
+        pubkey,
+        pegtl::star< pegtl::seq< pegtl::one< '.'>, pubkeyModifier > >
+    > {};
 
     struct pubkeyGroup : pegtl::sor<
-        pegtl::seq<
-            pubkey,
-            pegtl::star<followerExpandHat>
-        >,
+        pubkeyExpression,
         pegtl::seq<
             pad< pubkeyGroupOpen >,
             pubkeyList,
@@ -128,14 +221,13 @@ namespace algo_parser {
 
     struct variableIdentifier : pegtl::seq< pegtl::not_at< npub >, pegtl::identifier > {};
 
-    struct letIdentifier : variableIdentifier {};
-
+    struct letDefinition : variableIdentifier {};
     struct letTerminator : pegtl::one< ';' > {};
 
     struct let :
         pegtl::seq<
-            pad< pegtl::string< 'l', 'e', 't' > >,
-            pad< variableIdentifier >,
+            pad< TAO_PEGTL_STRING("let") >,
+            pad< letDefinition >,
             pad< pegtl::one< '=' > >,
             pad< pubkeyList >,
             letTerminator
@@ -157,7 +249,7 @@ namespace algo_parser {
 
     struct arith :
         pegtl::seq<
-            pad< pegtl::one< '+', '-' > >,
+            pad< pegtl::one< '+', '-', '*', '/' > >,
             number
         > {};
 
@@ -169,42 +261,46 @@ namespace algo_parser {
             pegtl::star< pegtl::alpha >
         > {};
 
-    struct likedByCondition :
-        pegtl::seq<
-            pad< pegtl::string< 'l', 'i', 'k', 'e', 'd' > >,
-            pad< pegtl::string< 'b', 'y' > >,
-            pad< variableIdentifier >
-        > {};
-
     struct contentCondition :
         pegtl::seq<
-            pad< pegtl::string< 'c', 'o', 'n', 't', 'e', 'n', 't' > >,
             pad< pegtl::one< '~' > >,
             pad< regexp >
         > {};
 
     struct condition :
         pegtl::sor<
-            pad< likedByCondition >,
             pad< contentCondition >
+        > {};
+
+    struct setterVar :
+        pegtl::sor<
+            TAO_PEGTL_STRING("mods"),
+            TAO_PEGTL_STRING("voters")
+        > {};
+
+    struct setterValue : variableIdentifier {};
+
+    struct setterStatement :
+        pegtl::seq<
+            pad< setterVar >,
+            pad< TAO_PEGTL_STRING("=") >,
+            pad< setterValue >,
+            pegtl::one< ';' >
         > {};
 
     struct filterStatment :
         pegtl::seq<
-            pegtl::sor<
-                pad< pegtl::string< 'd', 'r', 'o', 'p' > >,
-                pad< arith >
-            >,
-            pad< pegtl::string< 'i', 'f' > >,
+            pad< arith >,
+            pad< TAO_PEGTL_STRING("if") >,
             pad< condition >,
             pegtl::one< ';' >
         > {};
 
     struct postBlock :
         pegtl::seq<
-            pad< pegtl::string< 'p', 'o', 's', 't' > >,
+            pad< TAO_PEGTL_STRING("posts") >,
             pad< pegtl::one< '{' > >,
-            pegtl::star< pad< filterStatment > >,
+            pegtl::star< pad< pegtl::sor< setterStatement, filterStatment > > >,
             pegtl::one< '}' >
         > {};
 
@@ -222,86 +318,88 @@ namespace algo_parser {
     struct action {};
 
 
-    template<>
-    struct action< letIdentifier > {
-        template< typename ActionInput >
+    template<> struct action< letDefinition > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
-            std::cout << "LET: " << in.string() << std::endl;
+            std::cout << "LET: " << in.string_view() << std::endl;
             a.letStart(in.string_view());
         }
     };
 
-    template<>
-    struct action< letIdentifier > {
-        template< typename ActionInput >
+    template<> struct action< letTerminator > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
-            std::cout << "LETEND: " << in.string() << std::endl;
+            std::cout << "LETEND: " << in.string_view() << std::endl;
             a.letEnd();
         }
     };
 
-/*
-    template<>
-    struct action< pubkey > {
-        template< typename ActionInput >
-        static void apply(const ActionInput& in, AlgoParseState &state) {
+    template<> struct action< pubkey > { template< typename ActionInput >
+        static void apply(const ActionInput& in, AlgoParseState &a) {
             std::cout << "PK: " << in.string() << std::endl;
+            a.currPubkeyDesc = in.string();
         }
     };
 
-    template<>
-    struct action< pubkeyGroupOpen > {
-        template< typename ActionInput >
-        static void apply(const ActionInput &in, AlgoParseState &state) {
+    template<> struct action< pubkeyModifier > { template< typename ActionInput >
+        static void apply(const ActionInput& in, AlgoParseState &a) {
+            std::cout << "PKMOD: " << in.string() << std::endl;
+            a.currModifiers.push_back(in.string());
+        }
+    };
+
+    template<> struct action< pubkeySetOp > { template< typename ActionInput >
+        static void apply(const ActionInput& in, AlgoParseState &a) {
+            std::cout << "OP: " << in.string() << std::endl;
+            a.expressionStateStack.back().currInfixOp = in.string();
+        }
+    };
+
+    template<> struct action< pubkeyExpression > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
+            std::cout << "PKEXPR: " << in.string() << std::endl;
+            a.letAddExpression();
+        }
+    };
+
+    template<> struct action< pubkeyGroupOpen > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
             std::cout << "PKGRPOPEN: " << in.string() << std::endl;
+            a.expressionStateStack.push_back({ "+" });
         }
     };
 
-    template<>
-    struct action< pubkeyGroupClose > {
-        template< typename ActionInput >
-        static void apply(const ActionInput &in, AlgoParseState &state) {
+    template<> struct action< pubkeyGroupClose > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
             std::cout << "PKGRPCLOSE: " << in.string() << std::endl;
-        }
-    };
-    */
-
-/*
-    template<>
-    struct action< pubkeyList > {
-        template< typename ActionInput >
-        static void apply( const ActionInput& in, std::string& v ) {
-            std::cout << "PKLIST: " << in.string() << std::endl;
+            auto set = std::move(a.expressionStateStack.back().set);
+            a.expressionStateStack.pop_back();
+            a.mergeInfix(set);
         }
     };
 
-    template<>
-    struct action< pubkeySetOp > {
-        template< typename ActionInput >
-        static void apply( const ActionInput& in, std::string& v ) {
-            std::cout << "PKOP: " << in.string() << std::endl;
+
+
+    template<> struct action< setterVar > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
+            a.currSetterVar = in.string();
         }
     };
 
-    template<>
-    struct action< regexp > {
-        template< typename ActionInput >
-        static void apply( const ActionInput& in, std::string& v ) {
-            std::cout << "RE: " << in.string() << std::endl;
+    template<> struct action< setterValue > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
+            a.installSetter(in.string_view());
         }
     };
-    */
 }
 
 
-inline AlgoParseState parseAlgo(lmdb::txn &txn, std::string_view algoText) {
-    AlgoParseState state;
+inline AlgoCompiled parseAlgo(lmdb::txn &txn, std::string_view algoText) {
+    AlgoParseState a(txn);
 
     pegtl::memory_input in(algoText, "");
 
-    if (!pegtl::parse< algo_parser::main, algo_parser::action >(in, state)) {
+    if (!pegtl::parse< algo_parser::main, algo_parser::action >(in, a)) {
         throw herr("algo parse error");
     }
 
-    return state;
+    return std::move(a.a);
 }

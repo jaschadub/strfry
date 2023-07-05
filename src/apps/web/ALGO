@@ -1,17 +1,11 @@
-let admin = npub1yxprsscnjw2e6myxz73mmzvnqw5kvzd5ffjya9ecjypc5l0gvgksh8qud4;
-let mods = admin^;
-let members = admin^^;
-# let mods = admin.following
+let doug = npub1yxprsscnjw2e6myxz73mmzvnqw5kvzd5ffjya9ecjypc5l0gvgksh8qud4;
+let admins = doug.following;
+let members = admins.following;
 
 posts {
-    drop if flagged by mods;
+    mods = admins;
+    voters = members;
 
-    +1 if liked by members;
-
-    /10 if content ~ /bitcoin|btc|crypto/i;
-    *3  if content ~ /#grownostr/i;
-}
-
-comments {
-    drop if flagged by mods;
+    /10 if ~ /bitcoin|btc|crypto/i;
+    *3  if ~ /#grownostr/i;
 }
