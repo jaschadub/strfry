@@ -735,7 +735,7 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
 
     if (u.path.size() == 0) {
         Algo a(txn, from_hex("218238431393959d6c8617a3bd899303a96609b44a644e973891038a7de8622d"));
-        auto events = a.getEvents(txn, 300);
+        auto events = a.getEvents(txn, decomp, 300);
 
         std::vector<TemplarResult> rendered;
         auto now = hoytech::curr_time_s();

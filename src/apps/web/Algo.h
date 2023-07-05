@@ -7,6 +7,21 @@
 #include "AlgoParser.h"
 
 
+const std::string homepageAlgo = R"(
+let doug = npub1yxprsscnjw2e6myxz73mmzvnqw5kvzd5ffjya9ecjypc5l0gvgksh8qud4;
+let admins = doug.following;
+let members = admins.following;
+
+posts {
+    mods = admins;
+    voters = members;
+
+    /10 if ~ /(?i)bitcoin|btc|crypto/;
+    *3  if ~ /(?i)#grownostr/;
+}
+)";
+
+
 struct Algo {
     struct EventInfo {
         uint64_t comments = 0;
@@ -20,26 +35,14 @@ struct Algo {
         EventInfo info;
     };
 
-    flat_hash_set<std::string> following;
+    AlgoCompiled a;
 
 
-    Algo(lmdb::txn &txn, std::string_view pubkey) {
-        flat_hash_set<std::string> f1;
-
-        loadFollowing(txn, pubkey, f1);
-        LI << "1FOL = " << f1.size();
-
-        auto cp = f1;
-        for (auto &p : cp) loadFollowing(txn, p, f1);
-        LI << "2FOL = " << f1.size();
-
-        f1.insert(std::string(pubkey));
-
-        std::swap(following, f1);
+    Algo(lmdb::txn &txn, std::string_view pubkey) : a(parseAlgo(txn, homepageAlgo)) {
     }
 
 
-    std::vector<FilteredEvent> getEvents(lmdb::txn &txn, uint64_t limit) {
+    std::vector<FilteredEvent> getEvents(lmdb::txn &txn, Decompressor &decomp, uint64_t limit) {
         flat_hash_map<std::string, EventInfo> eventInfoCache;
         std::vector<FilteredEvent> output;
 
@@ -67,13 +70,14 @@ struct Algo {
                 eventInfoCache.emplace(id, EventInfo{});
                 auto &eventInfo = eventInfoCache[id];
 
-                if (!following.contains(pubkey)) return true;
+                if (a.voters && !a.voters->contains(pubkey)) return true;
+                a.updateScore(txn, decomp, ev, eventInfo.score);
                 if (eventInfo.score < 20.0) return true;
 
                 output.emplace_back(FilteredEvent{ev.primaryKeyId, std::string(id), eventInfo});
             } else if (kind == 7) {
                 auto pubkey = std::string(sv(ev.flat_nested()->pubkey()));
-                //if (!following.contains(pubkey)) return true;
+                //if (a.voters && !a.voters->contains(pubkey)) return true;
 
                 const auto &tagsArr = *(ev.flat_nested()->tagsFixed32());
                 for (auto it = tagsArr.rbegin(); it != tagsArr.rend(); ++it) {
