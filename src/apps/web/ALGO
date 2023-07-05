@@ -6,6 +6,6 @@ posts {
     mods = admins;
     voters = members;
 
-    /10 if ~ /bitcoin|btc|crypto/i;
-    *3  if ~ /#grownostr/i;
+    /10 if ~ /(?i)bitcoin|btc|crypto/;
+    *3  if ~ /(?i)#grownostr/;
 }

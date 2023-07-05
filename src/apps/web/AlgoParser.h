@@ -19,7 +19,7 @@ struct AlgoCompiled {
     PubkeySet *voters = nullptr;
 
     struct Filter {
-        RE2 re;
+        std::unique_ptr<RE2> re;
         char op;
         double arg;
     };
@@ -31,7 +31,7 @@ struct AlgoCompiled {
         re2::StringPiece rawJsonSP(rawJson);
 
         for (const auto &f : filters) {
-            if (!RE2::PartialMatch(rawJsonSP, f.re)) continue;
+            if (!RE2::PartialMatch(rawJsonSP, *f.re)) continue;
 
             if (f.op == '+') score += f.arg;
             else if (f.op == '-') score -= f.arg;
@@ -57,6 +57,8 @@ struct AlgoParseState {
     std::vector<std::string> currModifiers;
 
     std::string currSetterVar;
+    char currFilterOp;
+    double currFilterArg;
 
     AlgoParseState(lmdb::txn &txn) : txn(txn) {}
 
@@ -130,6 +132,16 @@ struct AlgoParseState {
 
         if (currSetterVar == "mods") a.mods = setPtr;
         else if (currSetterVar == "voters") a.voters = setPtr;
+    }
+
+    void installFilter(std::string_view val) {
+        //AlgoCompiled::Filter f(RE2(val), currFilterOp, currFilterArg);
+        //a.filters.emplace_back(std::move(f));
+
+        //RE2 r(val);
+        //RE2 r2(std::move(r));
+
+        a.filters.emplace_back(std::make_unique<RE2>(val), currFilterOp, currFilterArg);
     }
 
 
@@ -247,18 +259,20 @@ namespace algo_parser {
             >
         > {};
 
+    struct arithOp : pegtl::one< '+', '-', '*', '/' > {};
+    struct arithNumber : number {};
     struct arith :
         pegtl::seq<
-            pad< pegtl::one< '+', '-', '*', '/' > >,
-            number
+            pad< arithOp >,
+            arithNumber
         > {};
 
+    struct regexpPayload : pegtl::star< pegtl::sor< pegtl::string< '\\', '/' >, pegtl::not_one< '/' > > > {};
     struct regexp :
         pegtl::seq<
             pegtl::one< '/' >,
-            pegtl::star< pegtl::sor< pegtl::string< '\\', '/' >, pegtl::not_one< '/' > > >,
-            pegtl::one< '/' >,
-            pegtl::star< pegtl::alpha >
+            regexpPayload,
+            pegtl::one< '/' >
         > {};
 
     struct contentCondition :
@@ -387,6 +401,24 @@ namespace algo_parser {
     template<> struct action< setterValue > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
             a.installSetter(in.string_view());
+        }
+    };
+
+    template<> struct action< arithOp > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
+            a.currFilterOp = in.string_view().at(0);
+        }
+    };
+
+    template<> struct action< arithNumber > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
+            a.currFilterArg = std::stod(in.string());
+        }
+    };
+
+    template<> struct action< regexpPayload > { template< typename ActionInput >
+        static void apply(const ActionInput &in, AlgoParseState &a) {
+            a.installFilter(in.string_view());
         }
     };
 }
