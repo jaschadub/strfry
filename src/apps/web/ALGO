@@ -3,6 +3,7 @@ let admins = doug.following;
 let members = admins.following;
 
 posts {
+    threshold = 20;
     mods = admins;
     voters = members;
 

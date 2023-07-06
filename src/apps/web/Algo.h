@@ -13,11 +13,13 @@ let admins = doug.following;
 let members = admins.following;
 
 posts {
+    threshold = 80;
+
     mods = admins;
     voters = members;
 
     /10 if ~ /(?i)bitcoin|btc|crypto/;
-    *3  if ~ /(?i)#grownostr/;
+    *3.5  if ~ /(?i)#grownostr/;
 }
 )";
 
@@ -72,7 +74,7 @@ struct Algo {
 
                 if (a.voters && !a.voters->contains(pubkey)) return true;
                 a.updateScore(txn, decomp, ev, eventInfo.score);
-                if (eventInfo.score < 20.0) return true;
+                if (eventInfo.score < a.threshold) return true;
 
                 output.emplace_back(FilteredEvent{ev.primaryKeyId, std::string(id), eventInfo});
             } else if (kind == 7) {

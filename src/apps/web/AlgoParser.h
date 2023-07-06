@@ -11,6 +11,7 @@
 
 
 struct AlgoCompiled {
+    double threshold = 20;
     using PubkeySet = flat_hash_set<std::string>;
     std::vector<PubkeySet> pubkeySets;
     flat_hash_map<std::string, uint64_t> variableIndexLookup; // variableName -> index into pubkeySets
@@ -127,20 +128,18 @@ struct AlgoParseState {
 
 
     void installSetter(std::string_view val) {
-        if (!a.variableIndexLookup.contains(val)) throw herr("unknown variable: ", val);
-        auto *setPtr = &a.pubkeySets[a.variableIndexLookup[val]];
+        if (currSetterVar == "mods" || currSetterVar == "voters") {
+            if (!a.variableIndexLookup.contains(val)) throw herr("unknown variable: ", val);
+            auto *setPtr = &a.pubkeySets[a.variableIndexLookup[val]];
 
-        if (currSetterVar == "mods") a.mods = setPtr;
-        else if (currSetterVar == "voters") a.voters = setPtr;
+            if (currSetterVar == "mods") a.mods = setPtr;
+            else if (currSetterVar == "voters") a.voters = setPtr;
+        } else if (currSetterVar == "threshold") {
+            a.threshold = std::stod(std::string(val));
+        }
     }
 
     void installFilter(std::string_view val) {
-        //AlgoCompiled::Filter f(RE2(val), currFilterOp, currFilterArg);
-        //a.filters.emplace_back(std::move(f));
-
-        //RE2 r(val);
-        //RE2 r2(std::move(r));
-
         a.filters.emplace_back(std::make_unique<RE2>(val), currFilterOp, currFilterArg);
     }
 
@@ -289,10 +288,17 @@ namespace algo_parser {
     struct setterVar :
         pegtl::sor<
             TAO_PEGTL_STRING("mods"),
-            TAO_PEGTL_STRING("voters")
+            TAO_PEGTL_STRING("voters"),
+            TAO_PEGTL_STRING("threshold")
         > {};
 
-    struct setterValue : variableIdentifier {};
+    struct setterValue :
+        pegtl::star<
+            pegtl::sor<
+                pegtl::alnum,
+                pegtl::one< '.' >
+            >
+        > {};
 
     struct setterStatement :
         pegtl::seq<
@@ -334,56 +340,48 @@ namespace algo_parser {
 
     template<> struct action< letDefinition > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
-            std::cout << "LET: " << in.string_view() << std::endl;
             a.letStart(in.string_view());
         }
     };
 
     template<> struct action< letTerminator > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
-            std::cout << "LETEND: " << in.string_view() << std::endl;
             a.letEnd();
         }
     };
 
     template<> struct action< pubkey > { template< typename ActionInput >
         static void apply(const ActionInput& in, AlgoParseState &a) {
-            std::cout << "PK: " << in.string() << std::endl;
             a.currPubkeyDesc = in.string();
         }
     };
 
     template<> struct action< pubkeyModifier > { template< typename ActionInput >
         static void apply(const ActionInput& in, AlgoParseState &a) {
-            std::cout << "PKMOD: " << in.string() << std::endl;
             a.currModifiers.push_back(in.string());
         }
     };
 
     template<> struct action< pubkeySetOp > { template< typename ActionInput >
         static void apply(const ActionInput& in, AlgoParseState &a) {
-            std::cout << "OP: " << in.string() << std::endl;
             a.expressionStateStack.back().currInfixOp = in.string();
         }
     };
 
     template<> struct action< pubkeyExpression > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
-            std::cout << "PKEXPR: " << in.string() << std::endl;
             a.letAddExpression();
         }
     };
 
     template<> struct action< pubkeyGroupOpen > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
-            std::cout << "PKGRPOPEN: " << in.string() << std::endl;
             a.expressionStateStack.push_back({ "+" });
         }
     };
 
     template<> struct action< pubkeyGroupClose > { template< typename ActionInput >
         static void apply(const ActionInput &in, AlgoParseState &a) {
-            std::cout << "PKGRPCLOSE: " << in.string() << std::endl;
             auto set = std::move(a.expressionStateStack.back().set);
             a.expressionStateStack.pop_back();
             a.mergeInfix(set);
