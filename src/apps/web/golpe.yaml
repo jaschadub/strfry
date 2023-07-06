@@ -7,3 +7,6 @@ config:
     desc: "Port to open for the http protocol"
     default: 8080
     noReload: true
+  - name: web__homepageCommunity
+    desc: "Community descriptor for homepage"
+    default: ""

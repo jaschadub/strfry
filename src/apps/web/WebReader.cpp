@@ -5,7 +5,7 @@
 
 #include "Bech32Utils.h"
 #include "WebUtils.h"
-#include "Algo.h"
+#include "AlgoScanner.h"
 #include "WebTemplates.h"
 #include "DBQuery.h"
 
@@ -712,6 +712,70 @@ void doSearch(lmdb::txn &txn, Decompressor &decomp, std::string_view search, std
 
 
 
+tao::json::value lookupCommunitySpec(lmdb::txn &txn, Decompressor &decomp, std::string_view algoDescriptor) {
+    std::string algoText;
+
+    size_t pos = algoDescriptor.find("/");
+    if (pos == std::string_view::npos) throw herr("bad algo descriptor");
+    std::string author = to_hex(decodeBech32Simple(algoDescriptor.substr(0, pos)));
+    auto topic = algoDescriptor.substr(pos + 1);
+
+    tao::json::value filter = tao::json::value({
+        { "authors", tao::json::value::array({ author }) },
+        { "kinds", tao::json::value::array({ uint64_t(33700) }) },
+        { "#d", tao::json::value::array({ topic }) },
+    });
+
+    bool found = false;
+
+    foreachByFilter(txn, filter, [&](uint64_t levId){
+        tao::json::value ev = tao::json::from_string(getEventJson(txn, decomp, levId));
+        algoText = ev.at("content").get_string();
+        found = true;
+        return false;
+    });
+
+    if (!found) throw herr("unable to find algo");
+
+    return tao::json::from_string(algoText);
+}
+
+
+TemplarResult renderHomepage(lmdb::txn &txn, Decompressor &decomp, UserCache &userCache) {
+    auto communitySpec = lookupCommunitySpec(txn, decomp, cfg().web__homepageCommunity);
+
+    AlgoScanner a(txn, communitySpec.at("algo").get_string());
+    auto events = a.getEvents(txn, decomp, 300);
+
+    std::vector<TemplarResult> rendered;
+    auto now = hoytech::curr_time_s();
+    uint64_t n = 1;
+
+    for (auto &fe : events) {
+        auto ev = Event::fromLevId(txn, fe.levId);
+        ev.populateJson(txn, decomp);
+
+        struct {
+            uint64_t n;
+            const Event &ev;
+            const User &user;
+            std::string timestamp;
+            AlgoScanner::EventInfo &info;
+        } ctx = {
+            n,
+            ev,
+            *userCache.getUser(txn, decomp, ev.getPubkey()),
+            renderTimestamp(now, ev.getCreatedAt()),
+            fe.info,
+        };
+
+        rendered.emplace_back(tmpl::community::item(ctx));
+        n++;
+    }
+
+    return tmpl::community::list(rendered);
+}
+
 
 
 
@@ -734,36 +798,21 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
     std::string title;
 
     if (u.path.size() == 0) {
-        Algo a(txn, from_hex("218238431393959d6c8617a3bd899303a96609b44a644e973891038a7de8622d"));
-        auto events = a.getEvents(txn, decomp, 300);
+        body = renderHomepage(txn, decomp, userCache);
+    } else if (u.path[0] == "algo") {
+        auto communitySpec = lookupCommunitySpec(txn, decomp, cfg().web__homepageCommunity);
 
-        std::vector<TemplarResult> rendered;
-        auto now = hoytech::curr_time_s();
-        uint64_t n = 1;
+        struct {
+            std::string community;
+            tao::json::value &communitySpec;
+            std::string_view descriptor;
+        } ctx = {
+            "homepage",
+            communitySpec,
+            cfg().web__homepageCommunity,
+        };
 
-        for (auto &fe : events) {
-            auto ev = Event::fromLevId(txn, fe.levId);
-            ev.populateJson(txn, decomp);
-
-            struct {
-                uint64_t n;
-                const Event &ev;
-                const User &user;
-                std::string timestamp;
-                Algo::EventInfo &info;
-            } ctx = {
-                n,
-                ev,
-                *userCache.getUser(txn, decomp, ev.getPubkey()),
-                renderTimestamp(now, ev.getCreatedAt()),
-                fe.info,
-            };
-
-            rendered.emplace_back(tmpl::community::item(ctx));
-            n++;
-        }
-
-        body = tmpl::community::list(rendered);
+        body = tmpl::community::communityInfo(ctx);
     } else if (u.path[0] == "e") {
         if (u.path.size() == 2) {
             EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));

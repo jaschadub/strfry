@@ -7,6 +7,7 @@
 #include "AlgoParser.h"
 
 
+/*
 const std::string homepageAlgo = R"(
 let doug = npub1yxprsscnjw2e6myxz73mmzvnqw5kvzd5ffjya9ecjypc5l0gvgksh8qud4;
 let admins = doug.following;
@@ -22,9 +23,10 @@ posts {
     *3.5  if ~ /(?i)#grownostr/;
 }
 )";
+*/
 
 
-struct Algo {
+struct AlgoScanner {
     struct EventInfo {
         uint64_t comments = 0;
         double score = 0.0;
@@ -40,7 +42,7 @@ struct Algo {
     AlgoCompiled a;
 
 
-    Algo(lmdb::txn &txn, std::string_view pubkey) : a(parseAlgo(txn, homepageAlgo)) {
+    AlgoScanner(lmdb::txn &txn, std::string_view algoText) : a(parseAlgo(txn, algoText)) {
     }
 
 

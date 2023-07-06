@@ -81,6 +81,10 @@ h2 {
     a:link, a:visited {
         color: black;
     }
+
+    .logout-link:hover {
+        text-decoration: underline;
+    }
 }
 
 #ob-page {
@@ -244,6 +248,16 @@ table.vert {
         padding-top: 5px;
         font-size: 75%;
         color: #828282;
+    }
+}
+
+.community-algo {
+    .algo-text {
+        white-space: pre;
+        font-family: monospace;
+        margin-top: 25px;
+        padding-left: 15px;
+        background-color: lightgoldenrodyellow;
     }
 }
 
