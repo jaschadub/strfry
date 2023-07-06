@@ -386,10 +386,10 @@ struct DBQuery : NonCopyable {
 };
 
 
-inline void foreachByFilter(lmdb::txn &txn, const tao::json::value &filter, std::function<void(uint64_t, std::string_view)> cb) {
+inline void foreachByFilter(lmdb::txn &txn, const tao::json::value &filter, std::function<void(uint64_t)> cb) {
     DBQuery query(filter);
 
-    query.process(txn, [&](const auto &, uint64_t levId, std::string_view eventPayload){
-        cb(levId, eventPayload);
+    query.process(txn, [&](const auto &, uint64_t levId, std::string_view){
+        cb(levId);
     });
 }
