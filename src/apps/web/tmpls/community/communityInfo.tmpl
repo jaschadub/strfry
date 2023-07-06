@@ -1,16 +1,19 @@
 <div class="community-info">
-    <h2>Algo: $(ctx.communitySpec.at("name").get_string())</h2>
+    <h2>$(ctx.communitySpec.at("name").get_string())</h2>
 
     <div>
-        By: $(ctx.descriptor)
+        By: <a href='/u/$(ctx.communitySpec.at("authorNpub").get_string())'>$(ctx.communitySpec.at("authorUsername").get_string())</a>/$(ctx.communitySpec.at("topic").get_string())
     </div>
 
-    <h3>Description</h3>
 
-    <div class="">
+    <h2>Description</h2>
+
+    <div class="desc">$(ctx.communitySpec.at("desc").get_string())</div>
+
+
+    <h2>Algo</h2>
+
+    <div>
+        <pre class="algo">$(ctx.communitySpec.at("algo").get_string())</pre>
     </div>
-
-    <h3>Algo</h3>
-
-    <pre class="algo-text">$(ctx.communitySpec.at("algo").get_string())</pre>
 </div>

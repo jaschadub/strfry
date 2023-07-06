@@ -712,16 +712,17 @@ void doSearch(lmdb::txn &txn, Decompressor &decomp, std::string_view search, std
 
 
 
-tao::json::value lookupCommunitySpec(lmdb::txn &txn, Decompressor &decomp, std::string_view algoDescriptor) {
+tao::json::value lookupCommunitySpec(lmdb::txn &txn, Decompressor &decomp, UserCache &userCache, std::string_view algoDescriptor) {
     std::string algoText;
 
     size_t pos = algoDescriptor.find("/");
     if (pos == std::string_view::npos) throw herr("bad algo descriptor");
-    std::string author = to_hex(decodeBech32Simple(algoDescriptor.substr(0, pos)));
+    std::string authorNpub = std::string(algoDescriptor.substr(0, pos));
+    std::string authorPubkey = decodeBech32Simple(authorNpub);
     auto topic = algoDescriptor.substr(pos + 1);
 
     tao::json::value filter = tao::json::value({
-        { "authors", tao::json::value::array({ author }) },
+        { "authors", tao::json::value::array({ to_hex(authorPubkey) }) },
         { "kinds", tao::json::value::array({ uint64_t(33700) }) },
         { "#d", tao::json::value::array({ topic }) },
     });
@@ -737,12 +738,20 @@ tao::json::value lookupCommunitySpec(lmdb::txn &txn, Decompressor &decomp, std::
 
     if (!found) throw herr("unable to find algo");
 
-    return tao::json::from_string(algoText);
+    auto output = tao::json::from_string(algoText);
+
+    auto *user = userCache.getUser(txn, decomp, authorPubkey);
+
+    output["authorNpub"] = authorNpub;
+    output["authorUsername"] = user->username;
+    output["topic"] = topic;
+
+    return output;
 }
 
 
 TemplarResult renderHomepage(lmdb::txn &txn, Decompressor &decomp, UserCache &userCache) {
-    auto communitySpec = lookupCommunitySpec(txn, decomp, cfg().web__homepageCommunity);
+    auto communitySpec = lookupCommunitySpec(txn, decomp, userCache, cfg().web__homepageCommunity);
 
     AlgoScanner a(txn, communitySpec.at("algo").get_string());
     auto events = a.getEvents(txn, decomp, 300);
@@ -800,7 +809,7 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
     if (u.path.size() == 0) {
         body = renderHomepage(txn, decomp, userCache);
     } else if (u.path[0] == "algo") {
-        auto communitySpec = lookupCommunitySpec(txn, decomp, cfg().web__homepageCommunity);
+        auto communitySpec = lookupCommunitySpec(txn, decomp, userCache, cfg().web__homepageCommunity);
 
         struct {
             std::string community;

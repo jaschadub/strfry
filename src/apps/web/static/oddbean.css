@@ -251,12 +251,27 @@ table.vert {
     }
 }
 
-.community-algo {
-    .algo-text {
+.community-info {
+    h2 {
+        margin-bottom: 10px;
+        font-size: 110%;
+        font-weight: bold;
+    }
+
+    > div {
+        padding-left: 5px;
+        margin-bottom: 25px;
+    }
+
+    .desc {
+        white-space: pre-line;
+    }
+
+    .algo {
         white-space: pre;
         font-family: monospace;
         margin-top: 25px;
-        padding-left: 15px;
+        padding: 10px 10px 10px 10px;
         background-color: lightgoldenrodyellow;
     }
 }
