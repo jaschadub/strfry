@@ -185,19 +185,27 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
             title = std::string("profile: ") + user.username;
             body = tmpl::user::metadata(user);
         } else if (u.path.size() == 3) {
+            std::string userPubkey;
+
+            if (u.path[1].starts_with("npub1")) {
+                userPubkey = decodeBech32Simple(u.path[1]);
+            } else {
+                userPubkey = from_hex(u.path[1]);
+            }
+
             if (u.path[2] == "notes") {
-                UserEvents uc(txn, decomp, decodeBech32Simple(u.path[1]));
+                UserEvents uc(txn, decomp, userPubkey);
                 title = std::string("notes: ") + uc.u.username;
                 body = uc.render(txn, decomp);
             } else if (u.path[2] == "export.jsonl") {
-                rawBody = exportUserEvents(txn, decomp, decodeBech32Simple(u.path[1]));
+                rawBody = exportUserEvents(txn, decomp, userPubkey);
                 contentType = "application/jsonl+json; charset=utf-8";
             } else if (u.path[2] == "metadata.json") {
-                User user(txn, decomp, from_hex(u.path[1]));
+                User user(txn, decomp, userPubkey);
                 rawBody = user.kind0Found() ? tao::json::to_string(*user.kind0Json) : "{}";
                 contentType = "application/json; charset=utf-8";
             } else if (u.path[2] == "following") {
-                User user(txn, decomp, decodeBech32Simple(u.path[1]));
+                User user(txn, decomp, userPubkey);
                 title = std::string("following: ") + user.username;
                 user.populateContactList(txn, decomp);
 
@@ -211,7 +219,7 @@ void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const Ms
 
                 body = tmpl::user::following(ctx);
             } else if (u.path[2] == "followers") {
-                User user(txn, decomp, decodeBech32Simple(u.path[1]));
+                User user(txn, decomp, userPubkey);
                 title = std::string("followers: ") + user.username;
                 auto followers = user.getFollowers(txn, decomp, user.pubkey);
 

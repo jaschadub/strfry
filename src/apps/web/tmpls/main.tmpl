@@ -29,7 +29,7 @@
                 <span x-show="!loggedIn" @click="login" class="login-link">login</span>
                 <span x-show="loggedIn">
                     <a x-text="username" class="username" :href="myProfile"></a>
-                    <span @click="logout" class="logout-link">logout</span>
+                    | <span @click="logout" class="logout-link">logout</span>
                 </span>
             </span>
         </div>

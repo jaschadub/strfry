@@ -28,8 +28,11 @@ document.addEventListener('alpine:init', () => {
 
             let response = await fetch(`/u/${pubkey}/metadata.json`);
             let json = await response.json();
+            console.log(json);
 
-            let username = pubkey.substr(0, 8) + '...';
+            let username = json.name;
+            if (username === undefined) username = pubkey.substr(0, 8) + '...';
+            if (username.length > 25) username = username.substr(0, 25) + '...';
 
             this.pubkey = pubkey;
             this.username = username;
