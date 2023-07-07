@@ -7,24 +7,6 @@
 #include "AlgoParser.h"
 
 
-/*
-const std::string homepageAlgo = R"(
-let doug = npub1yxprsscnjw2e6myxz73mmzvnqw5kvzd5ffjya9ecjypc5l0gvgksh8qud4;
-let admins = doug.following;
-let members = admins.following;
-
-posts {
-    threshold = 80;
-
-    mods = admins;
-    voters = members;
-
-    /10 if ~ /(?i)bitcoin|btc|crypto/;
-    *3.5  if ~ /(?i)#grownostr/;
-}
-)";
-*/
-
 
 struct AlgoScanner {
     struct EventInfo {

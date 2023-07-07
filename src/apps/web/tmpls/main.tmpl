@@ -12,11 +12,17 @@
         <div id="ob-header">
             <span class="links">
                 <a href="/"><img class="logo" src="$(ctx.staticFilesPrefix)/oddbean.svg"></a>
-                <a href="/"><span class="sitename">Oddbean</span></a>
 
-                <a class="g" href="#">firehose</a> |
-                <a class="g" href="/post">new post</a> |
-                <a class="g" href="#">about</a>
+                <a href="/" class="sitename">
+                    <span class="oddbean-name">Oddbean</span>
+                    <> ?(ctx.communitySpec)
+                        / $(ctx.communitySpec->name)
+                    </>
+                </a>
+
+                <a href="/algo" class="community-rules">(algo)</a> ?(ctx.communitySpec)
+
+                <a href="/post" class="new-post">new post</a>
             </span>
 
             <span x-data="obLogin" class="login">
