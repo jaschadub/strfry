@@ -1,6 +1,5 @@
 #pragma once
 
-#include "zlib.h"
 #include "re2/re2.h"
 
 #include "Bech32Utils.h"
@@ -36,6 +35,7 @@ struct User {
         }
 
         if (username.size() == 0) username = to_hex(pubkey.substr(0,4));
+        if (username.size() > 50) username = username.substr(0, 50) + "...";
     }
 
     std::optional<tao::json::value> loadKindJson(lmdb::txn &txn, Decompressor &decomp, uint64_t kind) {

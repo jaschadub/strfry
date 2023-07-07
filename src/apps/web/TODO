@@ -3,12 +3,12 @@ build
   ! bundle static files in strfry binary
 
 read
-  ! thread viewer screen. algos?
+  ! caching
   ! non-500 error pages when bech32 fails to parse, for example
   ! search field: enter anything, pubkey (hex or npub), eventId, etc. maybe even full-text search?
   ! rss
   ! click on up/down vote counts to see who voted
-  ? pagination on user comments screen
+  ? pagination on user comments screen, communities
 
 styling
   ! make URLs in user profiles clickable

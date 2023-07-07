@@ -1,3 +1,5 @@
+#include "zlib.h"
+
 #include "WebServer.h"
 
 
@@ -33,7 +35,7 @@ void WebServer::sendHttpResponseAndUnlock(uint64_t lockedThreadId, const HTTPReq
     std::string payload;
     payload.reserve(body.size() + 1024);
 
-    payload += "HTTP/1.0 ";
+    payload += "HTTP/1.1 ";
     payload += status;
     payload += "\r\nContent-Length: ";
     payload += std::to_string(body.size());
