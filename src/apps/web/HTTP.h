@@ -3,9 +3,11 @@
 #include <zlib.h>
 #include <openssl/sha.h>
 
+#include <mutex>
 
 
-struct HTTPReq : NonCopyable {
+
+struct HTTPRequest : NonCopyable {
     uint64_t connId;
     uWS::HttpResponse *res;
 
@@ -16,7 +18,7 @@ struct HTTPReq : NonCopyable {
 
     std::string body;
 
-    HTTPReq(uint64_t connId, uWS::HttpResponse *res, uWS::HttpRequest req) : connId(connId), res(res) {
+    HTTPRequest(uint64_t connId, uWS::HttpResponse *res, uWS::HttpRequest req) : connId(connId), res(res) {
         res->hasHead = true; // We'll be sending our own headers
 
         ipAddr = res->httpSocket->getAddressBytes();
@@ -27,7 +29,7 @@ struct HTTPReq : NonCopyable {
 };
 
 
-struct HTTPResponseData : NonCopyable {
+struct HTTPResponse : NonCopyable {
     std::string_view code = "200 OK";
     std::string_view contentType = "text/html; charset=utf-8";
     std::string extraHeaders;
@@ -83,22 +85,5 @@ struct HTTPResponseData : NonCopyable {
         output += didCompress ? compressed : body;
 
         return output;
-    }
-};
-
-struct HTTPResponder {
-    struct Item {
-        std::string payload;
-        std::string payloadGzip;
-        std::string eTag;
-    };
-
-    void respond(const HTTPReq &req, std::function<void(HTTPResponseData&)> generate, std::function<void(std::string&)> send) {
-        HTTPResponseData resp;
-
-        generate(resp);
-
-        std::string encoded = resp.encode(req.acceptGzip);
-        send(encoded);
     }
 };

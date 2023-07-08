@@ -129,179 +129,185 @@ TemplarResult renderCommunityEvents(lmdb::txn &txn, Decompressor &decomp, UserCa
 
 
 
-void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg) {
+HTTPResponse WebServer::generateReadResponse(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg) {
+    HTTPResponse httpResp;
+
     auto startTime = hoytech::curr_time_us();
     const auto &req = msg->req;
     Url u(req.url);
 
     LI << "READ REQUEST: " << req.url;
 
-    httpResponder.respond(req, [&](HTTPResponseData &httpResp){
-        UserCache userCache;
+    UserCache userCache;
 
-        std::string_view code = "200 OK";
-        std::string_view contentType = "text/html; charset=utf-8";
+    std::string_view code = "200 OK";
+    std::string_view contentType = "text/html; charset=utf-8";
 
-        // Normal frame:
+    // Normal frame:
 
-        std::optional<TemplarResult> body;
-        std::optional<CommunitySpec> communitySpec;
-        std::string title;
+    std::optional<TemplarResult> body;
+    std::optional<CommunitySpec> communitySpec;
+    std::string title;
 
-        // Or, raw:
+    // Or, raw:
 
-        std::optional<std::string> rawBody;
+    std::optional<std::string> rawBody;
 
-        if (u.path.size() == 0 || u.path[0] == "algo") {
-            communitySpec = lookupCommunitySpec(txn, decomp, userCache, cfg().web__homepageCommunity);
+    if (u.path.size() == 0 || u.path[0] == "algo") {
+        communitySpec = lookupCommunitySpec(txn, decomp, userCache, cfg().web__homepageCommunity);
+    }
+
+    if (u.path.size() == 0) {
+        body = renderCommunityEvents(txn, decomp, userCache, *communitySpec);
+    } else if (u.path[0] == "algo") {
+        struct {
+            std::string community;
+            const CommunitySpec &communitySpec;
+            std::string_view descriptor;
+        } ctx = {
+            "homepage",
+            *communitySpec,
+            cfg().web__homepageCommunity,
+        };
+
+        body = tmpl::community::communityInfo(ctx);
+    } else if (u.path[0] == "e") {
+        if (u.path.size() == 2) {
+            EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
+            body = et.render(txn, decomp, userCache);
+        } else if (u.path.size() == 3) {
+            if (u.path[2] == "raw.json") {
+                auto ev = Event::fromIdExternal(txn, u.path[1]);
+                ev.populateJson(txn, decomp);
+                rawBody = tao::json::to_string(ev.json, 4);
+                contentType = "application/json; charset=utf-8";
+            } else if (u.path[2] == "export.jsonl") {
+                rawBody = exportEventThread(txn, decomp, decodeBech32Simple(u.path[1]));
+                contentType = "application/jsonl+json; charset=utf-8";
+            }
         }
+    } else if (u.path[0] == "u") {
+        if (u.path.size() == 2) {
+            User user(txn, decomp, decodeBech32Simple(u.path[1]));
+            title = std::string("profile: ") + user.username;
+            body = tmpl::user::metadata(user);
+        } else if (u.path.size() == 3) {
+            std::string userPubkey;
 
-        if (u.path.size() == 0) {
-            body = renderCommunityEvents(txn, decomp, userCache, *communitySpec);
-        } else if (u.path[0] == "algo") {
-            struct {
-                std::string community;
-                const CommunitySpec &communitySpec;
-                std::string_view descriptor;
-            } ctx = {
-                "homepage",
-                *communitySpec,
-                cfg().web__homepageCommunity,
-            };
-
-            body = tmpl::community::communityInfo(ctx);
-        } else if (u.path[0] == "e") {
-            if (u.path.size() == 2) {
-                EventThread et(txn, decomp, decodeBech32Simple(u.path[1]));
-                body = et.render(txn, decomp, userCache);
-            } else if (u.path.size() == 3) {
-                if (u.path[2] == "raw.json") {
-                    auto ev = Event::fromIdExternal(txn, u.path[1]);
-                    ev.populateJson(txn, decomp);
-                    rawBody = tao::json::to_string(ev.json, 4);
-                    contentType = "application/json; charset=utf-8";
-                } else if (u.path[2] == "export.jsonl") {
-                    rawBody = exportEventThread(txn, decomp, decodeBech32Simple(u.path[1]));
-                    contentType = "application/jsonl+json; charset=utf-8";
-                }
+            if (u.path[1].starts_with("npub1")) {
+                userPubkey = decodeBech32Simple(u.path[1]);
+            } else {
+                userPubkey = from_hex(u.path[1]);
             }
-        } else if (u.path[0] == "u") {
-            if (u.path.size() == 2) {
-                User user(txn, decomp, decodeBech32Simple(u.path[1]));
-                title = std::string("profile: ") + user.username;
-                body = tmpl::user::metadata(user);
-            } else if (u.path.size() == 3) {
-                std::string userPubkey;
 
-                if (u.path[1].starts_with("npub1")) {
-                    userPubkey = decodeBech32Simple(u.path[1]);
-                } else {
-                    userPubkey = from_hex(u.path[1]);
-                }
-
-                if (u.path[2] == "notes") {
-                    UserEvents uc(txn, decomp, userPubkey);
-                    title = std::string("notes: ") + uc.u.username;
-                    body = uc.render(txn, decomp);
-                } else if (u.path[2] == "export.jsonl") {
-                    rawBody = exportUserEvents(txn, decomp, userPubkey);
-                    contentType = "application/jsonl+json; charset=utf-8";
-                } else if (u.path[2] == "metadata.json") {
-                    User user(txn, decomp, userPubkey);
-                    rawBody = user.kind0Found() ? tao::json::to_string(*user.kind0Json) : "{}";
-                    contentType = "application/json; charset=utf-8";
-                } else if (u.path[2] == "following") {
-                    User user(txn, decomp, userPubkey);
-                    title = std::string("following: ") + user.username;
-                    user.populateContactList(txn, decomp);
-
-                    struct {
-                        User &user;
-                        std::function<const User*(const std::string &)> getUser;
-                    } ctx = {
-                        user,
-                        [&](const std::string &pubkey){ return userCache.getUser(txn, decomp, pubkey); },
-                    };
-
-                    body = tmpl::user::following(ctx);
-                } else if (u.path[2] == "followers") {
-                    User user(txn, decomp, userPubkey);
-                    title = std::string("followers: ") + user.username;
-                    auto followers = user.getFollowers(txn, decomp, user.pubkey);
-
-                    struct {
-                        const User &user;
-                        const std::vector<std::string> &followers;
-                        std::function<const User*(const std::string &)> getUser;
-                    } ctx = {
-                        user,
-                        followers,
-                        [&](const std::string &pubkey){ return userCache.getUser(txn, decomp, pubkey); },
-                    };
-
-                    body = tmpl::user::followers(ctx);
-                }
-            }
-        } else if (u.path[0] == "search") {
-            std::vector<TemplarResult> results;
-
-            if (u.query.starts_with("q=")) {
-                std::string_view search = u.query.substr(2);
-
-                doSearch(txn, decomp, search, results);
+            if (u.path[2] == "notes") {
+                UserEvents uc(txn, decomp, userPubkey);
+                title = std::string("notes: ") + uc.u.username;
+                body = uc.render(txn, decomp);
+            } else if (u.path[2] == "export.jsonl") {
+                rawBody = exportUserEvents(txn, decomp, userPubkey);
+                contentType = "application/jsonl+json; charset=utf-8";
+            } else if (u.path[2] == "metadata.json") {
+                User user(txn, decomp, userPubkey);
+                rawBody = user.kind0Found() ? tao::json::to_string(*user.kind0Json) : "{}";
+                contentType = "application/json; charset=utf-8";
+            } else if (u.path[2] == "following") {
+                User user(txn, decomp, userPubkey);
+                title = std::string("following: ") + user.username;
+                user.populateContactList(txn, decomp);
 
                 struct {
-                    std::string_view search;
-                    const std::vector<TemplarResult> &results;
+                    User &user;
+                    std::function<const User*(const std::string &)> getUser;
                 } ctx = {
-                    search,
-                    results,
+                    user,
+                    [&](const std::string &pubkey){ return userCache.getUser(txn, decomp, pubkey); },
                 };
 
-                body = tmpl::searchPage(ctx);
+                body = tmpl::user::following(ctx);
+            } else if (u.path[2] == "followers") {
+                User user(txn, decomp, userPubkey);
+                title = std::string("followers: ") + user.username;
+                auto followers = user.getFollowers(txn, decomp, user.pubkey);
+
+                struct {
+                    const User &user;
+                    const std::vector<std::string> &followers;
+                    std::function<const User*(const std::string &)> getUser;
+                } ctx = {
+                    user,
+                    followers,
+                    [&](const std::string &pubkey){ return userCache.getUser(txn, decomp, pubkey); },
+                };
+
+                body = tmpl::user::followers(ctx);
             }
-        } else if (u.path[0] == "post") {
-            body = tmpl::newPost(nullptr);
         }
+    } else if (u.path[0] == "search") {
+        std::vector<TemplarResult> results;
 
+        if (u.query.starts_with("q=")) {
+            std::string_view search = u.query.substr(2);
 
-
-
-        std::string responseData;
-
-        if (body) {
-            if (title.size()) title += " | ";
+            doSearch(txn, decomp, search, results);
 
             struct {
-                const TemplarResult &body;
-                const std::optional<CommunitySpec> &communitySpec;
-                std::string_view title;
-                std::string staticFilesPrefix;
+                std::string_view search;
+                const std::vector<TemplarResult> &results;
             } ctx = {
-                *body,
-                communitySpec,
-                title,
-                "http://127.0.0.1:8081",
+                search,
+                results,
             };
 
-            responseData = std::move(tmpl::main(ctx).str);
-        } else if (rawBody) {
-            responseData = std::move(*rawBody);
-        } else {
-            code = "404 Not Found";
-            body = TemplarResult{ "Not found" };
+            body = tmpl::searchPage(ctx);
         }
+    } else if (u.path[0] == "post") {
+        body = tmpl::newPost(nullptr);
+    }
 
-        httpResp.body = responseData;
-        httpResp.code = code;
-        httpResp.contentType = contentType;
 
-        LI << "Reply: " << code << " / " << responseData.size() << " bytes in " << (hoytech::curr_time_us() - startTime) << "us";
-    }, [&](std::string &responseData){
-        sendHttpResponseAndUnlock(msg->lockedThreadId, req, responseData);
-    });
+
+
+    std::string responseData;
+
+    if (body) {
+        if (title.size()) title += " | ";
+
+        struct {
+            const TemplarResult &body;
+            const std::optional<CommunitySpec> &communitySpec;
+            std::string_view title;
+            std::string staticFilesPrefix;
+        } ctx = {
+            *body,
+            communitySpec,
+            title,
+            "http://127.0.0.1:8081",
+        };
+
+        responseData = std::move(tmpl::main(ctx).str);
+    } else if (rawBody) {
+        responseData = std::move(*rawBody);
+    } else {
+        code = "404 Not Found";
+        body = TemplarResult{ "Not found" };
+    }
+
+    httpResp.body = responseData;
+    httpResp.code = code;
+    httpResp.contentType = contentType;
+
+    LI << "Reply: " << code << " / " << responseData.size() << " bytes in " << (hoytech::curr_time_us() - startTime) << "us";
+
+    return httpResp;
 }
 
+
+void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg) {
+    auto resp = generateReadResponse(txn, decomp, msg);
+    std::string encoded = resp.encode(msg->req.acceptGzip);
+    sendHttpResponseAndUnlock(msg->lockedThreadId, msg->req, encoded);
+}
 
 
 void WebServer::runReader(ThreadPool<MsgWebReader>::Thread &thr) {
@@ -317,7 +323,7 @@ void WebServer::runReader(ThreadPool<MsgWebReader>::Thread &thr) {
                 try {
                     handleReadRequest(txn, decomp, msg);
                 } catch (std::exception &e) {
-                    HTTPResponseData res;
+                    HTTPResponse res;
                     res.code = "500 Server Error";
                     res.body = "Server error";
 

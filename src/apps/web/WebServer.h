@@ -3,6 +3,7 @@
 #include <iostream>
 #include <memory>
 #include <algorithm>
+#include <mutex>
 
 #include <hoytech/time.h>
 #include <hoytech/hex.h>
@@ -12,7 +13,7 @@
 
 #include "golpe.h"
 
-#include "HTTPResponder.h"
+#include "HTTP.h"
 #include "ThreadPool.h"
 #include "Decompressor.h"
 
@@ -41,14 +42,18 @@ struct MsgHttpsocket : NonCopyable {
         uint64_t lockedThreadId;
     };
 
-    using Var = std::variant<Send>;
+    struct Unlock {
+        uint64_t lockedThreadId;
+    };
+
+    using Var = std::variant<Send, Unlock>;
     Var msg;
     MsgHttpsocket(Var &&msg_) : msg(std::move(msg_)) {}
 };
 
 struct MsgWebReader : NonCopyable {
     struct Request {
-        HTTPReq req;
+        HTTPRequest req;
         uint64_t lockedThreadId;
     };
 
@@ -59,7 +64,7 @@ struct MsgWebReader : NonCopyable {
 
 struct MsgWebWriter : NonCopyable {
     struct Request {
-        HTTPReq req;
+        HTTPRequest req;
     };
 
     using Var = std::variant<Request>;
@@ -70,7 +75,19 @@ struct MsgWebWriter : NonCopyable {
 
 struct WebServer {
     std::unique_ptr<uS::Async> hubTrigger;
-    HTTPResponder httpResponder;
+
+
+    // HTTP response cache
+
+    struct CacheItem {
+        std::string payload;
+        std::string payloadGzip;
+        std::string eTag;
+    };
+
+    std::mutex cacheLock;
+    flat_hash_map<std::string, std::unique_ptr<CacheItem>> cache;
+
 
     // Thread Pools
 
@@ -85,19 +102,25 @@ struct WebServer {
 
     void runReader(ThreadPool<MsgWebReader>::Thread &thr);
     void handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg);
+    HTTPResponse generateReadResponse(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg);
 
     void runWriter(ThreadPool<MsgWebWriter>::Thread &thr);
 
     // Utils
 
+    void unlockThread(uint64_t lockedThreadId) {
+        tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Unlock{lockedThreadId}});
+        hubTrigger->send();
+    }
+
     // Moves from payload!
-    void sendHttpResponseAndUnlock(uint64_t lockedThreadId, const HTTPReq &req, std::string &payload) {
+    void sendHttpResponseAndUnlock(uint64_t lockedThreadId, const HTTPRequest &req, std::string &payload) {
         tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{req.connId, req.res, std::move(payload), lockedThreadId}});
         hubTrigger->send();
     }
 
-    void sendHttpResponse(const HTTPReq &req, std::string_view body, std::string_view code = "200 OK", std::string_view contentType = "text/html; charset=utf-8") {
-        HTTPResponseData res;
+    void sendHttpResponse(const HTTPRequest &req, std::string_view body, std::string_view code = "200 OK", std::string_view contentType = "text/html; charset=utf-8") {
+        HTTPResponse res;
         res.code = code;
         res.contentType = contentType;
         res.body = std::string(body); // FIXME: copy

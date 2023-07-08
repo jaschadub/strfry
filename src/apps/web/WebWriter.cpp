@@ -52,7 +52,7 @@ void WebServer::runWriter(ThreadPool<MsgWebWriter>::Thread &thr) {
                 std::string message = "Write error: ";
                 message += e.what();
 
-                HTTPReq &req = *static_cast<HTTPReq*>(newEvent.userData);
+                HTTPRequest &req = *static_cast<HTTPRequest*>(newEvent.userData);
                 sendHttpResponse(req, tao::json::to_string(tao::json::value({{ "message", message }})), "500 Server Error", "application/json; charset=utf-8");
             }
 
@@ -85,7 +85,7 @@ void WebServer::runWriter(ThreadPool<MsgWebWriter>::Thread &thr) {
                 LI << "Rejected event. " << message << ", id=" << eventIdHex;
             }
 
-            HTTPReq &req = *static_cast<HTTPReq*>(newEvent.userData);
+            HTTPRequest &req = *static_cast<HTTPRequest*>(newEvent.userData);
             sendHttpResponse(req, tao::json::to_string(output), "200 OK", "application/json; charset=utf-8");
         }
     }
