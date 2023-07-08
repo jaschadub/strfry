@@ -12,31 +12,11 @@
 
 #include "golpe.h"
 
+#include "HTTPResponder.h"
 #include "ThreadPool.h"
 #include "Decompressor.h"
 
 
-
-struct HTTPReq : NonCopyable {
-    uint64_t connId;
-    uWS::HttpResponse *res;
-
-    std::string ipAddr;
-    std::string url;
-    uWS::HttpMethod method = uWS::HttpMethod::METHOD_INVALID;
-    bool acceptGzip = false;
-
-    std::string body;
-
-    HTTPReq(uint64_t connId, uWS::HttpResponse *res, uWS::HttpRequest req) : connId(connId), res(res) {
-        res->hasHead = true; // We'll be sending our own headers
-
-        ipAddr = res->httpSocket->getAddressBytes();
-        method = req.getMethod();
-        url = req.getUrl().toString();
-        acceptGzip = req.getHeader("accept-encoding").toStringView().find("gzip") != std::string::npos;
-    }
-};
 
 struct Connection : NonCopyable {
     uWS::HttpSocket<uWS::SERVER> *httpsocket;
@@ -90,6 +70,7 @@ struct MsgWebWriter : NonCopyable {
 
 struct WebServer {
     std::unique_ptr<uS::Async> hubTrigger;
+    HTTPResponder httpResponder;
 
     // Thread Pools
 
@@ -109,9 +90,20 @@ struct WebServer {
 
     // Utils
 
-    void sendHttpResponseAndUnlock(uint64_t lockedThreadId, const HTTPReq &req, std::string_view body, std::string_view status = "200 OK", std::string_view contentType = "text/html; charset=utf-8");
+    // Moves from payload!
+    void sendHttpResponseAndUnlock(uint64_t lockedThreadId, const HTTPReq &req, std::string &payload) {
+        tpHttpsocket.dispatch(0, MsgHttpsocket{MsgHttpsocket::Send{req.connId, req.res, std::move(payload), lockedThreadId}});
+        hubTrigger->send();
+    }
 
-    void sendHttpResponse(const HTTPReq &req, std::string_view body, std::string_view status = "200 OK", std::string_view contentType = "text/html; charset=utf-8") {
-        sendHttpResponseAndUnlock(MAX_U64, req, body, status, contentType);
+    void sendHttpResponse(const HTTPReq &req, std::string_view body, std::string_view code = "200 OK", std::string_view contentType = "text/html; charset=utf-8") {
+        HTTPResponseData res;
+        res.code = code;
+        res.contentType = contentType;
+        res.body = std::string(body); // FIXME: copy
+
+        std::string payload = res.encode(false);
+
+        sendHttpResponseAndUnlock(MAX_U64, req, payload);
     }
 };
