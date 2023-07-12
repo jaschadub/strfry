@@ -80,9 +80,17 @@ struct WebServer {
     // HTTP response cache
 
     struct CacheItem {
+        std::mutex lock;
+
+        uint64_t expiry;
+        uint64_t softExpiry;
+
         std::string payload;
         std::string payloadGzip;
         std::string eTag;
+
+        bool generationInProgress = false;
+        std::vector<HTTPRequest> pendingRequests;
     };
 
     std::mutex cacheLock;
@@ -101,8 +109,8 @@ struct WebServer {
     void dispatchPostRequest();
 
     void runReader(ThreadPool<MsgWebReader>::Thread &thr);
-    void handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg);
-    HTTPResponse generateReadResponse(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg);
+    void handleReadRequest(lmdb::txn &txn, Decompressor &decomp, uint64_t lockedThreadId, HTTPRequest &req);
+    HTTPResponse generateReadResponse(lmdb::txn &txn, Decompressor &decomp, const HTTPRequest &req, uint64_t &cacheTime);
 
     void runWriter(ThreadPool<MsgWebWriter>::Thread &thr);
 

@@ -129,11 +129,10 @@ TemplarResult renderCommunityEvents(lmdb::txn &txn, Decompressor &decomp, UserCa
 
 
 
-HTTPResponse WebServer::generateReadResponse(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg) {
+HTTPResponse WebServer::generateReadResponse(lmdb::txn &txn, Decompressor &decomp, const HTTPRequest &req, uint64_t &cacheTime) {
     HTTPResponse httpResp;
 
     auto startTime = hoytech::curr_time_us();
-    const auto &req = msg->req;
     Url u(req.url);
 
     LI << "READ REQUEST: " << req.url;
@@ -155,6 +154,7 @@ HTTPResponse WebServer::generateReadResponse(lmdb::txn &txn, Decompressor &decom
 
     if (u.path.size() == 0 || u.path[0] == "algo") {
         communitySpec = lookupCommunitySpec(txn, decomp, userCache, cfg().web__homepageCommunity);
+        cacheTime = 30'000'000;
     }
 
     if (u.path.size() == 0) {
@@ -303,10 +303,104 @@ HTTPResponse WebServer::generateReadResponse(lmdb::txn &txn, Decompressor &decom
 }
 
 
-void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, const MsgWebReader::Request *msg) {
-    auto resp = generateReadResponse(txn, decomp, msg);
-    std::string encoded = resp.encode(msg->req.acceptGzip);
-    sendHttpResponseAndUnlock(msg->lockedThreadId, msg->req, encoded);
+
+void WebServer::handleReadRequest(lmdb::txn &txn, Decompressor &decomp, uint64_t lockedThreadId, HTTPRequest &req) {
+    auto now = hoytech::curr_time_us();
+    std::string response;
+    bool cacheItemFound = false, preGenerate = false;
+
+    {
+        CacheItem *item = nullptr;
+
+        {
+            std::lock_guard<std::mutex> guard(cacheLock);
+            auto it = cache.find(req.url);
+            if (it != cache.end()) item = it->second.get();
+        }
+
+        bool addedToPending = false;
+
+        if (item) {
+            cacheItemFound = true;
+            std::lock_guard<std::mutex> guard(item->lock);
+
+            if (now < item->expiry) {
+                response = req.acceptGzip ? item->payloadGzip : item->payload;
+                if (now > item->softExpiry && !item->generationInProgress) {
+                    preGenerate = true;
+                    item->generationInProgress = true;
+                    LI << "DOING PREGEN";
+                }
+            } else {
+                if (item->generationInProgress) {
+                    item->pendingRequests.emplace_back(std::move(req));
+                    addedToPending = true;
+                }
+
+                item->generationInProgress = true;
+            }
+        }
+
+        if (addedToPending) {
+            unlockThread(lockedThreadId);
+            return;
+        }
+    }
+
+    if (response.size()) {
+        if (preGenerate) {
+            sendHttpResponseAndUnlock(MAX_U64, req, response);
+        } else {
+            sendHttpResponseAndUnlock(lockedThreadId, req, response);
+            return;
+        }
+    }
+
+    uint64_t cacheTime = 0;
+
+    // FIXME: try/catch
+    auto resp = generateReadResponse(txn, decomp, req, cacheTime);
+
+    if (cacheTime == 0 && !cacheItemFound) {
+        std::string payload = resp.encode(req.acceptGzip);
+        sendHttpResponseAndUnlock(lockedThreadId, req, payload);
+        return;
+    }
+
+    std::string payload = resp.encode(false);
+    std::string payloadGzip = resp.encode(true);
+    now = hoytech::curr_time_us();
+    std::vector<HTTPRequest> pendingRequests;
+
+    {
+        CacheItem *item = nullptr;
+
+        {
+            std::lock_guard<std::mutex> guard(cacheLock);
+            item = cache.emplace(req.url, std::make_unique<CacheItem>()).first->second.get();
+        }
+
+        {
+            std::lock_guard<std::mutex> guard(item->lock);
+
+            item->expiry = now + cacheTime;
+            item->softExpiry = now + (cacheTime/2);
+
+            item->payload = payload;
+            item->payloadGzip = payloadGzip;
+
+            item->generationInProgress = false;
+            std::swap(item->pendingRequests, pendingRequests);
+        }
+    }
+
+    for (const auto &r : pendingRequests) {
+        std::string myPayload = r.acceptGzip ? payloadGzip : payload;
+        sendHttpResponseAndUnlock(MAX_U64, r, myPayload);
+    }
+
+    if (preGenerate) unlockThread(lockedThreadId);
+    else sendHttpResponseAndUnlock(lockedThreadId, req, req.acceptGzip ? payloadGzip : payload);
 }
 
 
@@ -321,7 +415,7 @@ void WebServer::runReader(ThreadPool<MsgWebReader>::Thread &thr) {
         for (auto &newMsg : newMsgs) {
             if (auto msg = std::get_if<MsgWebReader::Request>(&newMsg.msg)) {
                 try {
-                    handleReadRequest(txn, decomp, msg);
+                    handleReadRequest(txn, decomp, msg->lockedThreadId, msg->req);
                 } catch (std::exception &e) {
                     HTTPResponse res;
                     res.code = "500 Server Error";
