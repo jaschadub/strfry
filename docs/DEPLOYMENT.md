@@ -155,7 +155,7 @@ Now let's open the port to the outside world:
         sudo ufw status
         sudo ufw default deny incoming  
         sudo ufw default allow outgoing
-        ufw allow 22/tcp # allow incoming SSH traffic  
+        sudo ufw allow 22/tcp # allow incoming SSH traffic  
         sudo ufw enable
 
 For added security you can `sudo apt install -y fail2ban`
